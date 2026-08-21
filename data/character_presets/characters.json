@@ -1,0 +1,402 @@
+[
+  {
+    "id": "clara_moreau",
+    "name": "Clara Moreau",
+    "age": 23,
+    "title": "La Créative Ambitieuse",
+    "gender": "F",
+    "appearance": "Grande (1m75), élancée, avec de longs cheveux châtains ondulés qu'elle attache souvent en chignon flou. Elle a de grands yeux noisette expressifs, quelques taches de rousseur sur le nez et un style vestimentaire vintage chic mais confortable.",
+    "personality": "Enthousiaste, curieuse et idéaliste, mais parfois un peu étourdie. Clara est une personne solaire qui gagne facilement la confiance des gens grâce à son empathie naturelle.",
+    "parcours": {
+      "scolaire": "Baccalauréat en arts plastiques, suivi d'un diplôme en design graphique et direction artistique.",
+      "professionnel": "Après deux ans en agence de publicité où elle s'est sentie à l'étroit, elle vient de se lancer en freelance comme illustratrice et designer de marque pour des projets écoresponsables."
+    },
+    "histoire_personnelle": "Grandie dans une famille nombreuse et chaleureuse en province, elle est partie s'installer en métropole à 18 ans pour ses études. Elle habite aujourd'hui un petit appartement lumineux rempli de plantes et d'ustensiles de peinture.",
+    "parcours_amoureux": "A vécu une histoire fondatrice de trois ans avec son amour de jeunesse, qui s'est terminée doucement par manque de projets communs à la fin de leurs études. Aujourd'hui célibataire, elle profite de sa liberté pour se concentrer sur son indépendance financière et créative.",
+    "centres_interet": "La chine en brocante et le chinage de vêtements vintage pour les customiser."
+  },
+  {
+    "id": "elodie_vance",
+    "name": "Élodie Vance",
+    "age": 29,
+    "title": "La Pragmatique Épicurienne",
+    "gender": "F",
+    "appearance": "De taille moyenne (1m65), carrure athlétique, cheveux bruns coupés en carré plongeant très net. Regard vif couleur chocolat, sourire facile et allure toujours soignée (blazer ajusté, baskets tendance).",
+    "personality": "Énergique, directe et pragmatique. Elle a un humour pince-sans-rire très développé. Très loyale envers ses proches, elle aime organiser des repas et rassembler du monde autour d'une bonne table.",
+    "parcours": {
+      "scolaire": "École de commerce avec une spécialisation en gestion hôtelière et événementielle.",
+      "professionnel": "Directrice d'exploitation pour un groupe de restaurants branchés. Elle gère les équipes, les budgets et l'événementiel au quotidien avec une poigne de fer dans un gant de velours."
+    },
+    "histoire_personnelle": "Fille d'artisans, elle a hérité du sens du travail bien fait. Indépendante très jeune, elle a voyagé six mois en Asie du Sud-Est après ses études pour découvrir la street-food locale avant de revenir poser ses valises.",
+    "parcours_amoureux": "Sort d'une relation de deux ans avec un collègue du milieu de la restauration, dont les horaires décalés et l'intensité ont fini par épuiser le couple. Célibataire depuis six mois, elle réapprend à prendre du temps pour elle sans culpabiliser.",
+    "centres_interet": "Le décryptage de la scène gastronomique locale et l'organisation d'ateliers de street-food maison."
+  },
+  {
+    "id": "maya_lin",
+    "name": "Maya Lin",
+    "age": 34,
+    "title": "L'Esprit Analytique et Calme",
+    "gender": "F",
+    "appearance": "Silhouette fine (1m68), teint clair, longs cheveux noirs raides souvent détachés. Yeux sombres très doux, lunettes à monture dorée fine. Son style est minimaliste, moderne et raffiné (tons neutres, coupes sobres).",
+    "personality": "Indépendante, réservée et profondément réfléchie. Maya parle peu mais toujours avec précision. Elle est très observatrice et possède une grande force intérieure.",
+    "parcours": {
+      "scolaire": "Master en bio-informatique suivi d'un doctorat en génétique des populations.",
+      "professionnel": "Chercheuse au sein d'un institut de recherche médical. Elle passe ses journées à analyser des données génomiques pour aider au développement de traitements ciblés."
+    },
+    "histoire_personnelle": "D'origine sino-française, elle a grandi entre deux cultures, ce qui lui a donné une grande ouverture d'esprit et un besoin d'équilibre. Passionnée d'escalade en salle et de littérature classique.",
+    "parcours_amoureux": "A connu une longue relation de sept ans qui s'est terminée il y a un an et demi. La séparation s'est faite sans drame, sur le constat d'une évolution vers une belle amitié plutôt que de l'amour. Elle apprécie son célibat actuel et la sérénité de son quotidien.",
+    "centres_interet": "L'escalade de bloc en salle et la lecture de romans de science-fiction spéculative."
+  },
+  {
+    "id": "roxane_dubreuil",
+    "name": "Roxane Dubreuil",
+    "age": 38,
+    "title": "La Passionnée Résiliente",
+    "gender": "F",
+    "appearance": "Petite (1m58), formes généreuses et posture affirmée. Cheveux bouclés volumineux teints en auburn, yeux vert olive pétillants. Elle a un style vestimentaire affirmé, coloré et original, souvent agrémenté de bijoux imposants.",
+    "personality": "Extravertie, passionnée et franche. Roxane ne laisse personne indifférent. C'est une protectrice née, très engagée dans les causes qui lui tiennent à cœur, mais qui sait aussi décompresser et faire la fête.",
+    "parcours": {
+      "scolaire": "Droit public, puis reconversion rapide via un master en droit de l'environnement et gestion des risques.",
+      "professionnel": "Juriste pour une ONG de défense de l'environnement. Elle négocie avec des collectivités et monte des dossiers pour protéger des espaces naturels."
+    },
+    "histoire_personnelle": "A surmonté plusieurs épreuves personnelles tôt dans sa vie, ce qui lui donne une grande résilience et une soie de vivre contagieuse. Elle habite une maison en périphérie avec son chien de refuge.",
+    "parcours_amoureux": "A été mariée pendant quatre ans à la fin de la vingtaine, un mariage qui s'est soldé par un divorce constructif. Après quelques histoires courtes mais intenses, elle est célibataire depuis un an. Elle sait exactement ce qu'elle veut et ce qu'elle ne tolère plus dans une relation.",
+    "centres_interet": "L'éco-jardinage et la randonnée canine avec son chien de refuge."
+  },
+  {
+    "id": "yasmine_al-mansour",
+    "name": "Yasmine Al-Mansour",
+    "age": 21,
+    "title": "La Déterminée Audacieuse",
+    "gender": "F",
+    "appearance": "Grande (1m72), allure sportive et tonique. Peau mate, yeux noirs en amande très expressifs et cheveux bruns très courts bouclés. Elle privilégie le style streetwear chic (baskets collector, vestes oversizes).",
+    "personality": "Ambitieuse, vive et compétitrice, avec un esprit d'initiative hors norme. Elle aime relever des défis et n'a pas peur de prendre la parole en public, même si elle cache une certaine vulnérabilité derrière sa grande assurance.",
+    "parcours": {
+      "scolaire": "Actuellement en dernière année de licence en sciences politiques et gestion de projets.",
+      "professionnel": "En parallèle de ses études, elle a cofondé une application mobile d'entraide étudiante qui commence à prendre de l'ampleur."
+    },
+    "histoire_personnelle": "Aînée de quatre enfants, elle a très tôt développé un sens des responsabilités. Elle adore le basketball qu'elle pratique en club depuis son enfance et puise son énergie dans le travail d'équipe.",
+    "parcours_amoureux": "N'a connu jusqu'ici que des histoires amoureuses légères et de courte durée propres à l'adolescence et aux premières années d'études. Très concentrée sur son diplôme et le lancement de sa start-up, elle est célibataire et ne cherche pas activement de relation, préférant laisser venir les choses naturellement.",
+    "centres_interet": "Le basketball de rue (streetball) et le suivi des dernières tendances tech/start-up."
+  },
+  {
+    "id": "ines_belkacem",
+    "name": "Inès Belkacem",
+    "age": 25,
+    "title": "La Passionnée d'Aventure",
+    "gender": "F",
+    "appearance": "De taille moyenne (1m67), teint hâlé, yeux noisette dorés et une longue chevelure châtain clair souvent tressée pour des raisons pratiques. Elle a un style vestimentaire sobre, fonctionnel et d'inspiration outdoor (vestes légères, bottines de marche, tons terre).",
+    "personality": "Curieuse, spontanée et très adaptable. Inès est une optimiste nées qui carbure au changement. Elle peut être un peu impatiente face à la routine ou à la bureaucratie, mais sa joie de vivre est très communicative.",
+    "parcours": {
+      "scolaire": "Licence en géographie et aménagement du territoire, suivie d'une spécialisation en écotourisme.",
+      "professionnel": "Guide d'expédition et organisatrice de voyages d'aventure sur mesure. Elle alterne entre périodes sur le terrain à accompagner des groupes et mois de conception de parcours depuis chez elle."
+    },
+    "histoire_personnelle": "Elle a grandi dans les Alpes et a appris à skier avant de savoir marcher. À 20 ans, elle a fait un voyage en solo de six mois en Amérique du Sud qui a confirmé son goût pour l'inconnu.",
+    "parcours_amoureux": "A eu une relation amoureuse à distance pendant deux ans qui s'est terminée car leurs modes de vie devenaient incompatibles. Célibataire depuis huit mois, elle aime la liberté de pouvoir plier bagage sur un coup de tête.",
+    "centres_interet": "Le bivouac en haute montagne et la photographie de paysages sauvages."
+  },
+  {
+    "id": "valerie_cheron",
+    "name": "Valérie Chéron",
+    "age": 39,
+    "title": "La Créative Pragmatique",
+    "gender": "F",
+    "appearance": "Silhouette élancée et élégante (1m70), cheveux poivre et sel coupés en un carré court très assumé et moderne. Regard bleu acier perçant, posture droite et démarche assurée. Style vestimentaire structuré, chic et intemporel.",
+    "personality": "Réfléchie, perfectionniste et dotée d'un grand sens de l'humour noir. Valérie est une femme d'action qui garde son calme dans les situations de crise, mais qui sait aussi se montrer très chaleureuse en petit comité.",
+    "parcours": {
+      "scolaire": "Diplôme national supérieur d'expression plastique (DNSEP) puis master en architecture d'intérieur.",
+      "professionnel": "Architecte d'intérieur chevronnée. Après avoir été associée dans un grand cabinet, elle a fondé son propre studio de création il y a cinq ans, spécialisé dans la réhabilitation de lieux anciens."
+    },
+    "histoire_personnelle": "Fille unique d'un père ébéniste et d'une mère institutrice, elle a toujours baigné dans le goût des beaux matériaux et de la transmission. Elle vit dans un loft qu’elle a entièrement rénové elle-même.",
+    "parcours_amoureux": "Divorcée depuis trois ans après un mariage de dix ans qui s'est essoufflé au fil du temps. Aujourd'hui totalement épanouie dans son indépendance, elle est célibataire et cherche une relation basée sur l'égalité stricte et le respect des espaces de chacun.",
+    "centres_interet": "La chine de pièces d'art déco et la restauration de petits meubles anciens."
+  },
+  {
+    "id": "camille_desrosiers",
+    "name": "Camille Desrosiers",
+    "age": 22,
+    "title": "L'Esprit Doux et Altruiste",
+    "gender": "F",
+    "appearance": "Petite (1m60), allure douce avec des formes rondes, teint très clair et taches de rousseur. Longs cheveux roux bouclés, yeux vert clair. Elle porte un style bohème et confortable (gilets en maille, robes fluides, bijoux en argent).",
+    "personality": "Calme, bienveillante, à l'écoute et très sensible à l'art et à la nature. Camille est introvertie mais possède une grande force d'écoute. Elle peut parfois manquer un peu d'assurance, mais défend ses valeurs avec une grande ténacité.",
+    "parcours": {
+      "scolaire": "Actuellement en fin d'études d'orthophonie (master).",
+      "professionnel": "En stage de fin d'études en milieu hospitalier auprès d'enfants, tout en travaillant les fins de semaine dans une librairie indépendante."
+    },
+    "histoire_personnelle": "Issue d'un petit village de campagne, elle a gardé un lien très fort avec la nature et les animaux. Elle passe son temps libre à faire du bénévolat dans un refuge animalier et à pratiquer la céramique.",
+    "parcours_amoureux": "A vécu une première grande histoire d'amour de deux ans pendant ses premières années d'université. La rupture s'est faite naturellement quand leurs chemins d'études se sont séparés. Célibataire, elle prend le temps de se découvrir elle-même avant de s'engager à nouveau.",
+    "centres_interet": "Le modelage et le tournage de la céramique artisanale."
+  },
+  {
+    "id": "lea_fontaine",
+    "name": "Léa Fontaine",
+    "age": 31,
+    "title": "La Technophile Énergique",
+    "gender": "F",
+    "appearance": "Grande (1m78), carrure athlétique (joueuse de volley-ball), peau mate, yeux marron foncé très vifs. Cheveux bruns coupés très court. Style vestimentaire moderne, décontracté et urbain (sweats de qualité, sneakers rares, montres connectées).",
+    "personality": "Compétitive, ultra-dynamique, directe et pragmatique. Léa est une résolveuse de problèmes née qui adore relever des défis techniques ou organisationnels. Elle est très loyale en amitié et adore rassembler du monde autour de jeux de société ou de sports d'équipe.",
+    "parcours": {
+      "scolaire": "Diplôme d'ingénieur en informatique avec une option en intelligence artificielle.",
+      "professionnel": "Lead Developpeuse / Directrice technique dans une entreprise de cybersécurité. Elle encadre une équipe de dix développeurs."
+    },
+    "histoire_personnelle": "Passionnée d'informatique dès son plus jeune âge, elle a souvent évolué dans des milieux très masculins, ce qui lui a forgé un caractère affirmé et sans détour.",
+    "parcours_amoureux": "Sort d'une relation de quatre ans qui s'est terminée il y a un an, car son partenaire de l'époque avait du mal à accepter son investissement professionnel et son indépendance financière. Très heureuse dans son célibat actuel, elle ne souhaite pas se précipiter.",
+    "centres_interet": "Les jeux de société modernes de stratégie (Eurogames) et le volley-ball en club."
+  },
+  {
+    "id": "diane_de_saint-germain",
+    "name": "Diane de Saint-Germain",
+    "age": 36,
+    "title": "La Passionnée d'Histoire et de Culture",
+    "gender": "F",
+    "appearance": "Taille moyenne (1m66), allure très distinguée, cheveux bruns raides coupés à l'épaule. Yeux gris-bleu expressifs, voix douce et posée. Elle s'habille avec une élégance classique et rétro (chemisiers en soie, jupes plissées, manteaux structurés).",
+    "personality": "Érudite, pensive et raffinée. Diane a une curiosité insatiable pour l'histoire, l'art et le patrimoine. Elle est parfois perçue comme un peu distante au premier abord, mais se révèle être une personne d'une grande fidélité et d'une finesse d'esprit remarquable.",
+    "parcours": {
+      "scolaire": "École du Louvre suivie d'un master en conservation du patrimoine et muséologie.",
+      "professionnel": "Conservatrice de musée spécialisée dans les arts décoratifs. Elle conçoit des expositions et gère la préservation de collections historiques."
+    },
+    "histoire_personnelle": "A grandi entourée de livres et d'antiquités. Elle a habité dans plusieurs capitales européennes (Florence, Londres, Vienne) pour ses recherches avant de revenir s'installer en France.",
+    "parcours_amoureux": "A connu une relation marquante de cinq ans avec un universitaire étranger, qui a pris fin en raison de l'éloignement géographique et de leurs impératifs de carrière respectifs. Célibataire depuis deux ans, elle profite pleinement de sa vie culturelle et de ses voyages d'études.",
+    "centres_interet": "L'opéra et la visite d'expositions d'art classique à travers l'Europe."
+  },
+  {
+    "id": "natasha_cote",
+    "name": "Natasha Côté",
+    "age": 30,
+    "title": "La Rescapée Révoltée",
+    "gender": "F",
+    "appearance": "Très jolie, Natasha attire immédiatement le regard. Mince aux courbes très marquées, elle a une poitrine généreuse. De longs cheveux blonds encadrent un visage aux lèvres pulpeuses, et une multitude de tatouages recouvrent une partie de son corps, témoignages d'une vie qu'elle porte sur la peau.",
+    "personality": "Un tempérament de feu. Natasha est caractérielle, jalouse et rapidement colérique. Derrière son attitude défensive et son instabilité émotionnelle — alimentée par des problèmes de consommation d'alcool et de drogues — se cache une femme marquée par la vie qui lutte quotidiennement contre ses démons.",
+    "parcours": {
+      "scolaire": "Un parcours scolaire écourté : ayant quitté le toit familial très tôt après un environnement toxique, elle a abandonné l'école au milieu du secondaire sans décrocher de diplôme.",
+      "professionnel": "Après avoir enchaîné les petits boulots précaires de nuit, elle est devenue danseuse nue. Elle met à profit son magnétisme et son corps pour assurer son indépendance financière, dans un milieu dur qui colle à sa réalité brute."
+    },
+    "histoire_personnelle": "Un passé marqué par les épreuves, les déboires financiers et les dépendances. Natasha a fui très jeune un foyer familial violent et a dû apprendre à survivre seule, enchaînant les galères avant de trouver un équilibre fragile dans le milieu de la nuit.",
+    "parcours_amoureux": "Une histoire amoureuse faite de relations toxiques et passionnelles, souvent gâchées par sa jalousie maladive et ses excès. Aujourd'hui célibataire, elle a du mal à faire confiance et se protège derrière une armure d'agressivité qui repousse aussi bien les opportunités que les menaces.",
+    "centres_interet": "Le karaoké dans les bars sombres : son défouloir ultime, l'endroit où elle évacue son trop-plein d'émotions sans filtre."
+  },
+  {
+    "id": "marie_jeanne_tremblay",
+    "name": "Marie-Jeanne Tremblay",
+    "age": 21,
+    "title": "La Popstar Pétillante",
+    "gender": "F",
+    "appearance": "Petite de taille et particulièrement ravissante, elle arbore des cheveux châtains mi-longs rehaussés de mèches rouge vif. Elle adore attirer les regards avec un style vestimentaire extravagant, très sexy et haut en couleur, qui fait d'elle une silhouette impossible à manquer.",
+    "personality": "Enjouée, très énergique et extrêmement bavarde, Marie-Jeanne est une véritable boule d'énergie. Un brin enfantine et superficielle, elle est foncièrement gentille et aime que tout son entourage soit heureux autour d'elle.",
+    "parcours": {
+      "scolaire": "Scolarisée dans les meilleures écoles privées, elle a bénéficié de cours particuliers de chant, de danse et de musique dès son plus jeune âge, financés par des parents couvés et fortunés.",
+      "professionnel": "Chanteuse pop en pleine ascension, elle enchaîne les tournées internationales où elle chante et danse devant des milliers de fans."
+    },
+    "histoire_personnelle": "Issue d'une famille très fortunée, elle a toujours eu une vie facile et à l'abri du besoin. Couvée par ses parents, elle aborde la vie avec une certaine naïveté qui la rend attachante mais la fragilise face aux réalités du monde adulte.",
+    "parcours_amoureux": "Côté cœur, ses rares histoires se sont résumées à des amourettes de tournée avec d'autres artistes. Actuellement célibataire, son emploi du temps surchargé et sa maturité émotionnelle encore jeune ne lui laissent pas vraiment de place pour un engagement sérieux.",
+    "centres_interet": "Le magasinage de mode alternative et le design de ses propres tenues de scène excentriques, qu'elle imagine et personnalise entre deux répétitions."
+  },
+  {
+    "id": "jackie_gagnon",
+    "name": "Jackie Gagnon",
+    "age": 19,
+    "title": "La Rebelle Sans Filtre",
+    "gender": "F",
+    "appearance": "Très jolie sous sa dégaine négligée, Jackie a une silhouette légèrement grassette. Elle affiche des cheveux mal teints multicolores, un maquillage noir prononcé autour des yeux, des ongles peints en noir, des bas collants en résille noirs déchirés, un short en jean usé et des t-shirts de groupes punk.",
+    "personality": "Un fort caractère invulnérable. Elle ne se laisse marcher sur les pieds par personne, se montre provocante et sarcastique, mais possède une loyauté absolue envers ceux qu'elle accepte dans son cercle restreint.",
+    "parcours": {
+      "scolaire": "Décrocheuse scolaire, elle a claqué la porte du lycée à 16 ans après une ultime altercation avec la direction.",
+      "professionnel": "Ne travaille pas. Elle vit au jour le jour, refusant de s'intégrer dans le système traditionnel, débrouillarde pour trouver ce dont elle a besoin."
+    },
+    "histoire_personnelle": "Jackie ne connaît pas son père et entretient une relation conflictuelle et pleine de rancœur avec sa mère. Elle a rapidement quitté le domicile familial pour vivre dans la rue ou dans des squats, construisant sa propre famille de choix parmi d'autres écorchés vifs.",
+    "parcours_amoureux": "En amour, elle a vécu des histoires chaotiques et intenses avec d'autres marginaux. Aujourd'hui célibataire, elle revendique haut et fort sa liberté et son indépendance, refusant de se laisser attacher par qui que ce soit.",
+    "centres_interet": "Fréquenter les concerts punk underground, squatter les skateparks et fabriquer ses propres fanzines qu'elle imprime et distribue à la main."
+  },
+  {
+    "id": "julia_cormier",
+    "name": "Julia Cormier",
+    "age": 25,
+    "title": "L'Athlète Solaire",
+    "gender": "F",
+    "appearance": "Grande et athlétique, Julia a de magnifiques longs cheveux roux et une peau parsemée de charmantes taches de rousseur. Elle met sa silhouette en valeur avec des tenues très ajustées : maillot rouge vif moulant au travail, shorts de sport et débardeurs ultra-moulants pour courir, sans oublier sa passion pour les mini-jupes au quotidien.",
+    "personality": "Patient, gentille, attentionnée et serviable. C'est une personne posée, solaire et très disciplinée qui aime prendre soin des autres et transmettre son énergie positive.",
+    "parcours": {
+      "scolaire": "Diplôme d'études collégiales en secourisme, sauvetage aquatique et kinésiologie.",
+      "professionnel": "Sauveteuse (lifeguard) professionnelle. Elle adore son travail, la natation et la responsabilité de veiller sur les baigneurs."
+    },
+    "histoire_personnelle": "Issue d'une famille aimante du littoral, elle a grandi au bord de l'eau. Sa vie est saine et entièrement tournée vers le sport, l'effort et les autres.",
+    "parcours_amoureux": "Elle a vécu une relation de quatre ans avec son amour d'université, mais ils se sont séparés en bons termes suite à des envies de vie différentes. Désormais célibataire, elle croise beaucoup de monde mais attend de tomber sur quelqu'un qui saura partager son mode de vie actif.",
+    "centres_interet": "La collection de maillots de bain en tous genres — qu'elle accumule par dizaines — et la course à pied intensive en plein air."
+  },
+  {
+    "id": "beatrice_nkongo",
+    "name": "Béatrice Nkongo",
+    "age": 35,
+    "title": "La Créative Indomptable",
+    "gender": "F",
+    "appearance": "Grande, mince avec de très belles formes généreuses, Béatrice est une magnifique femme noire aux longs cheveux noirs et raides. Elle a un sens du style bien à elle, adorant porter des tenues très originales, sexy et élégantes qui ne passent jamais inaperçues.",
+    "personality": "Joviale, amicale, chaleureuse et très sociable. Elle sait nouer des liens rapidement avec n'importe qui et garde toujours le sourire malgré les épreuves, refusant de laisser l'amertume gagner du terrain.",
+    "parcours": {
+      "scolaire": "Excellente formation académique universitaire (master en droit des affaires ou en gestion), réussie avec de très hautes notes.",
+      "professionnel": "Bien que très qualifiée, elle ne peut pas exercer dans son domaine d'études pour des raisons nébuleuses (un problème d'équivalence de diplôme à l'étranger, une clause de non-concurrence litigieuse ou un conflit passé). Elle travaille actuellement comme barmaid, tout en rêvant secrètement de percer comme mannequin."
+    },
+    "histoire_personnelle": "Malgré les embûches professionnelles qui ont mis ses ambitions entre parenthèses, Béatrice a immigré avec optimisme et a construit sa vie ici sans jamais baisser les bras. Elle puise dans son énergie créative une source intarissable de résilience.",
+    "parcours_amoureux": "Sa vie amoureuse a été mise entre parenthèses ces dernières années au profit de sa stabilité financière et de ses projets artistiques. Célibataire à 35 ans, elle cherche un partenaire à la hauteur de son esprit libre et de son élégance.",
+    "centres_interet": "La peinture sur toile. Dans ses moments de calme, elle exprime toute sa créativité sur de grands formats colorés, entre abstraction vibrante et portraits intimes."
+  },
+  {
+    "id": "thomas_mercier",
+    "name": "Thomas Mercier",
+    "age": 24,
+    "title": "Le Passionné de Tech et de Plein Air",
+    "gender": "M",
+    "appearance": "Grand (1m84), silhouette mince et élancée. Cheveux châtains coupés court sur les côtés avec un peu de longueur sur le dessus, yeux bleu-vert expressifs. Son style est décontracté et moderne (jeans bruts, t-shirts neutres bien coupés, surchemises en laine et sneakers propres).",
+    "personality": "Empathique, curieux et légèrement introverti au premier abord, Thomas se détend rapidement dès qu'on aborde des sujets qui le passionnent. C'est un esprit calme, très à l'écoute et d'une grande gentillesse.",
+    "parcours": {
+      "scolaire": "Baccalauréat scientifique suivi d'un master en informatique spécialisé dans le développement d'applications mobiles.",
+      "professionnel": "Développeur front-end en télétravail pour une entreprise de logiciels écologiques. Cette flexibilité lui permet de gérer son temps à sa guise."
+    },
+    "histoire_personnelle": "Grandi près de la montagne, il a appris très tôt à composer entre les écrans et la nature. Il passe la moitié de son temps libre à coder des projets personnels et l'autre moitié à faire de la randonnée ou du vélo de route.",
+    "parcours_amoureux": "A vécu une histoire de deux ans pendant ses études qui s'est terminée doucement par manque de projection commune une fois leurs diplômes en poche. Célibataire depuis un an, il apprécie sa routine tout en restant ouvert aux belles rencontres.",
+    "centres_interet": "Le cyclisme de route et la contribution à des projets informatiques open-source."
+  },
+  {
+    "id": "alexandre_alex_roy",
+    "name": "Alexandre \"Alex\" Roy",
+    "age": 28,
+    "title": "L'Énergique Entrepreneur",
+    "gender": "M",
+    "appearance": "De taille moyenne (1m76), carrure athlétique entretenue par le crossfit. Cheveux bruns bouclés très courts, barbe de trois jours toujours bien taillée. Regard pétillant couleur noisette, sourire facile. Style vestimentaire dynamique et soigneusement décontracté (sweats de qualité, pantalons chino, vestes légères).",
+    "personality": "Extraverti, optimiste et pragmatique. Alex a un leadership naturel et une énergie débordante. Il est très loyal envers son cercle d'amis et adore rassembler du monde pour des activités ou des barbecues improvisés.",
+    "parcours": {
+      "scolaire": "DUT Techniques de Commercialisation suivi d'une licence professionnelle en création d'entreprise.",
+      "professionnel": "Co-fondateur d'une torréfaction artisanale et d'un café de quartier. Il gère la partie commerciale, la relation avec les producteurs locaux et l'animation du lieu."
+    },
+    "histoire_personnelle": "Issu d'une famille d'artisans, il a toujours voulu monter sa propre affaire. Il s'est lancé très jeune avec son meilleur ami d'enfance, concrétisant une passion partagée pour le café de spécialité.",
+    "parcours_amoureux": "Sort d'une relation de trois ans qui s'est achevée il y a environ sept mois. Le rythme intense lié au lancement de son entreprise a pesé sur le couple. Désormais mieux installé dans son activité, il prend le temps d'équilibrer sa vie personnelle.",
+    "centres_interet": "La torréfaction d'essais à la maison et l'entraînement de Crossfit en équipe."
+  },
+  {
+    "id": "julien_vaneau",
+    "name": "Julien Vaneau",
+    "age": 33,
+    "title": "Le Créatif Érudit",
+    "gender": "M",
+    "appearance": "Élancé (1m80), allure distinguée sans être rigide. Cheveux bruns légèrement grisonnants sur les tempes, yeux marron foncé très doux, lunettes à monture écaille. Style vestimentaire soigné aux influences rétro (chemises en lin, vestes en tweed ou en velours côtelé, bottines en cuir).",
+    "personality": "Calme, observateur, fin d'esprit et doté d'un humour pince-sans-rire. Julien est un bon vivant passionné de littérature, de musique classique et de cuisine traditionnelle.",
+    "parcours": {
+      "scolaire": "Master en histoire de l'art suivi d'une formation spécialisée dans le travail du bois et la restauration de meubles.",
+      "professionnel": "Ébéniste et restaurateur d'art. Il travaille à son compte dans un atelier baigné de lumière où il redonne vie à du mobilier ancien."
+    },
+    "histoire_personnelle": "Après avoir travaillé quelques années dans des galeries d'art à la fin de ses études, il a ressenti le besoin d'un métier manuel. Il habite un appartement ancien rempli de livres, de vinyles et d'objets dénichés en brocante.",
+    "parcours_amoureux": "A connu une longue relation de six ans qui s'est terminée il y a deux ans. La séparation s'est faite en bons termes après la réalisation qu'ils n'évoluaient plus dans la même direction. Très serein avec lui-même, il recherche une connexion intellectuelle et émotionnelle forte.",
+    "centres_interet": "L'écoute et la collection de vinyles de jazz des années 50 et 60."
+  },
+  {
+    "id": "mehdi_benali",
+    "name": "Mehdi Benali",
+    "age": 37,
+    "title": "Le Pragmatique Altruiste",
+    "gender": "M",
+    "appearance": "Grand et solide (1m88), teint mat, yeux noirs intenses et chaleureux. Cheveux très rasés et barbe courte bien entretenue. Il privilégie un style vestimentaire sobre, fonctionnel et masculin (chemises bien coupées, pantalons sombres, manteaux structurés).",
+    "personality": "Posé, protecteur et d'une grande maturité émotionnelle. Mehdi est un homme sur qui l'on peut compter en toutes circonstances. Il s'exprime avec clarté et bienveillance, sans dramatiser les situations.",
+    "parcours": {
+      "scolaire": "Diplôme d'État d'infirmier, suivi quelques années plus tard d'une spécialisation en soins d'urgence et réanimation.",
+      "professionnel": "Infirmier d'encadrement (cadre de santé) dans un grand centre hospitalier. Il gère au quotidien une équipe soignante et l'organisation d'un service."
+    },
+    "histoire_personnelle": "Aîné d'une fratrie de trois enfants, il a très tôt développé le sens du soin et des responsabilités. Passionné de course à pied et de marathon, c'est son moyen de faire le vide après de longues semaines de travail.",
+    "parcours_amoureux": "A été fiancé à la trentaine, mais la relation a pris fin avant le mariage en raison de désaccords profonds sur l'avenir et le mode de vie. Célibataire depuis plus d'un an, il sait clairement ce qu'il attend d'une vie à deux : de la complicité, de la communication et une confiance mutuelle.",
+    "centres_interet": "La préparation de marathons et la course à pied en milieu naturel (trail)."
+  },
+  {
+    "id": "sebastien_laurier",
+    "name": "Sébastien Laurier",
+    "age": 40,
+    "title": "Le Solitaire Épanoui",
+    "gender": "M",
+    "appearance": "Silhouette athlétique et affinée par la pratique de la voile et de la course (1m78). Cheveux poivre et sel coupés court, yeux bleus rieurs, rides d'expression marquées par le soleil autour des yeux. Style vestimentaire simple et élégant (pulls en maille marine, marinières, jeans confortables, vestes de pont).",
+    "personality": "Indépendant, d'un calme olympien et très autonome. Sébastien est un homme de peu de mots mais d'une grande profondeur. Il aime la solitude choisie autant que les moments de partage authentiques avec ses proches.",
+    "parcours": {
+      "scolaire": "Diplôme d'ingénieur en océanographie et gestion des milieux marins.",
+      "professionnel": "Chef de projet dans un bureau d'études spécialisé dans la protection des littoraux et les énergies marines renouvelables."
+    },
+    "histoire_personnelle": "A passé une grande partie de la trentaine à voyager pour des missions scientifiques en mer. Il s'est réinstallé sur la côte depuis trois ans pour se fixer un point d'attache durable près de l'océan.",
+    "parcours_amoureux": "A vécu deux grandes histoires marquantes dans sa vie, mais son rythme de vie itinérant a longtemps rendu les relations durables difficiles. Aujourd'hui totalement stabilisé et très épanoui à 40 ans, il apprécie son célibat sans fermeture, prêt à accueillir une belle complicité si la bonne personne se présente.",
+    "centres_interet": "La navigation à la voile et la cartographie des fonds marins."
+  },
+  {
+    "id": "hugo_martin",
+    "name": "Hugo Martin",
+    "age": 21,
+    "title": "Le Passionné de Musique et d'Histoire",
+    "gender": "M",
+    "appearance": "Grand (1m82), silhouette très fine, teint clair. Cheveux châtains mi-longs un peu ébouriffés, yeux marron clair très expressifs. Style vestimentaire d'inspiration indie/britpop (vestes en jean de seconde main, t-shirts de groupes, pantalons droits et baskets usées).",
+    "personality": "Rêveur, passionné et chaleureux. Hugo est une éponge émotionnelle, très sensible aux atmosphères et à l'art. Un peu idéaliste, il a une grande fraîcheur d'esprit et un enthousiasme contagieux.",
+    "parcours": {
+      "scolaire": "Licence de musicologie et histoire contemporaine en cours d'achèvement.",
+      "professionnel": "Étudiant, tout en travaillant comme disquaire à temps partiel dans un magasin de vinyles indépendants et en jouant de la basse dans un groupe local."
+    },
+    "histoire_personnelle": "Élevé dans une famille d'amateurs de musique, il a grandi au milieu des instruments. Il consacre une grande partie de son temps libre à composer, chiner des disques et organiser des petits concerts associatifs.",
+    "parcours_amoureux": "A vécu quelques romances légères et passionnées propres aux années de lycée et de début d'université. Célibataire depuis peu, il laisse venir les choses sans pression, très concentré sur ses études et ses projets musicaux.",
+    "centres_interet": "La composition musicale à la basse et le chinage de vinyles rares chez les disquaires."
+  },
+  {
+    "id": "nicolas_nico_fevre",
+    "name": "Nicolas \"Nico\" Fèvre",
+    "age": 27,
+    "title": "Le Sportif Pédagogue",
+    "gender": "M",
+    "appearance": "Taille moyenne (1m75), carrure très athlétique et tonique. Cheveux bruns coupés très ras sur les côtés, yeux noisette pétillants, sourire ultra-bright. Style vestimentaire très sportswear épuré (ensembles techniques, sneakers de course, hoodies sobres).",
+    "personality": "Extraverti, motivant et d'une énergie inépuisable. Nico aime encourager les autres et pousser son entourage vers le haut. Il est d'un naturel profondément positif et très facile d'accès.",
+    "parcours": {
+      "scolaire": "Licence STAPS (Sciences et Techniques des Activités Physiques et Sportives) avec une option entraînement sportif.",
+      "professionnel": "Coach sportif indépendant et préparateur physique pour des athlètes amateurs. Il donne aussi des cours collectifs de remise en forme."
+    },
+    "histoire_personnelle": "Ancien gymnastique de haut niveau, il a dû réorienter sa carrière suite à une blessure à l'adolescence, ce qui lui a appris la résilience et la gestion du corps.",
+    "parcours_amoureux": "Sort d'une relation de deux ans avec une autre sportive, qui s'est terminée il y a six mois par une poignée de main amicale lorsqu'ils ont réalisé que leur lien était devenu purement amical. Il apprécie sa liberté retrouvée tout en restant très ouvert à l'amour.",
+    "centres_interet": "La préparation physique ciblée et le suivi des compétitions de gymnastique."
+  },
+  {
+    "id": "romain_lemaire",
+    "name": "Romain Lemaire",
+    "age": 31,
+    "title": "Le Scientifique Écoresponsable",
+    "gender": "M",
+    "appearance": "Grand (1m86), allure souple et détendue. Cheveux châtains bouclés un peu sauvages, barbe courte bien entretenue, yeux vert forêt derrière des lunettes rondes et sobres. Style vestimentaire éco-conçu et fonctionnel (chemises en chanvre ou coton bio, pantalons de toile, bottines durables).",
+    "personality": "Calme, réfléchi et méthodique, mais doté d'une pointe d'humour absurde très appréciée de ses amis. Romain est d'une grande patience et possède des convictions écologiques profondes qu'il applique au quotidien sans jamais juger les autres.",
+    "parcours": {
+      "scolaire": "Master en sciences de la Terre et de l'environnement, suivi d'une spécialisation en gestion des déchets et économie circulaire.",
+      "professionnel": "Ingénieur conseil en transition écologique pour les collectivités locales. Il aide les villes à réduire leur empreinte carbone et à développer le compostage urbain."
+    },
+    "histoire_personnelle": "A grandi à la campagne avant de faire ses études en grande ville. Il a récemment acheté un petit appartement avec balcon où il fait pousser ses propres herbes aromatiques et légumes en bacs.",
+    "parcours_amoureux": "A connu une histoire marquante de cinq ans qui s'est achevée il y a un an et demi en raison de visions divergentes sur le lieu de vie futur. Totalement remis de cette rupture, il recherche une relation simple, alignée sur ses valeurs.",
+    "centres_interet": "La permaculture urbaine et la fabrication de compost d'appartement."
+  },
+  {
+    "id": "david_cohen",
+    "name": "David Cohen",
+    "age": 36,
+    "title": "Le Juriste Écuré et Bon Vivant",
+    "gender": "M",
+    "appearance": "De taille moyenne (1m72), allure élégante et rassurante. Cheveux poivre et sel coupés court, yeux marron très foncés, regard bienveillant. Style vestimentaire toujours impeccablement ajusté (costumes sur mesure sans cravate au travail, pulls en cachemire et pantalons bien coupés le weekend).",
+    "personality": "Brilliant, posé, très fin diplomate et doté d'une grande culture générale. David est le genre de personne qui sait détendre une atmosphère tendue par un mot d'esprit. C'est un hôte formidable qui adore cuisiner pour ses proches.",
+    "parcours": {
+      "scolaire": "Master 2 en droit des affaires et diplôme d'avocat.",
+      "professionnel": "Avocat associé dans un cabinet spécialisé dans le droit de la propriété intellectuelle et le soutien aux créateurs d'entreprises."
+    },
+    "histoire_personnelle": "Passionné de gastronomie et d'œnologie, il passe une partie de son temps libre à suivre des cours de cuisine et à visiter des vignobles. Il habite un bel appartement en centre-ville.",
+    "parcours_amoureux": "A été en couple pendant près de huit ans, une relation qui s'est essoufflée progressivement avant de se terminer il y a deux ans. Il a pris le temps de faire le point et recherche aujourd'hui une partenaire autonome avec qui partager des moments de vie chaleureux.",
+    "centres_interet": "L'œnologie, la dégustation de grands crus et la cuisine gastronomique italienne."
+  },
+  {
+    "id": "marc_dujardin",
+    "name": "Marc Dujardin",
+    "age": 40,
+    "title": "L'Artisan Passionné",
+    "gender": "M",
+    "appearance": "Solide (1m80), carrure développée par son travail manuel, mains fortes et travaillées. Cheveux rasés très court, barbe poivre et sel bien taillée, yeux bleu clair perçants avec des rides d'expression très marquées par le rire. Style vestimentaire simple et brut (chemises en jean, t-shirts solides, pantalons de travail ou jeans de qualité).",
+    "personality": "Authentique, généreux et d'une franchise absolue. Marc ne sait pas jouer de rôle : ce qu'on voit est ce qu'on a. Il est profondément attaché aux relations humaines vraies, aux valeurs du travail bien fait et à la simplicité.",
+    "parcours": {
+      "scolaire": "CAP et Brevet Professionnel en charpente et travail du bois.",
+      "professionnel": "Artisan charpentier et constructeur de structures en bois écologiques. Il dirige une petite équipe de trois personnes sur des chantiers régionaux."
+    },
+    "histoire_personnelle": "Après avoir arpenté la France pendant ses années d'apprentissage pour se former auprès des meilleurs, il s'est installé à son compte il y a dix ans. Il a rénové lui-même une ancienne grange en bois dans laquelle il vit.",
+    "parcours_amoureux": "A été marié pendant six ans dans sa trentaine, un mariage qui s'est solde par un divorce sans animosité il y a quatre ans. Très épanoui dans sa vie professionnelle et personnelle, il aborde son célibat avec sérénité, sans précipitation mais avec l'envie de reconstruire quelque chose de solide si la complicité est là.",
+    "centres_interet": "La sculpture sur bois brut et l'ébénisterie créative durant son temps libre."
+  }
+]

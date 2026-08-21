@@ -1,0 +1,45 @@
+# docker-compose.yml — Ami(e) IA (compagnon virtuel, serveur dédié)
+#
+# PRÉREQUIS : les conteneurs `llamacpp` (chat, port interne 8080) et
+# `llamaembed` (embeddings, port interne 8080) doivent déjà tourner sur le
+# réseau `openwebui-net`. Ils sont démarrés par le docker-compose du projet
+# « d&d app - copie » :
+#     cd "../d&d app - copie" && docker compose up -d llamacpp llamaembed
+#
+# Démarrage :
+#   docker compose up -d --build
+#
+# Port : l'hôte écoute sur 8124 (conteneur interne 8000). Pour changer :
+#   set AMIE_PORT=9000 && docker compose up -d
+#
+# ComfyUI (images) tourne sur l'hôte (8188) ; le conteneur y accède via
+# host.docker.internal.
+#
+# Arrêt :
+#   docker compose down        # les données (sessions, photos, users) sont conservées
+
+services:
+  amie-ia:
+    build: .
+    image: amie-ia:latest
+    container_name: amie-ia
+    ports:
+      - "${AMIE_PORT:-8124}:8000"
+    environment:
+      AMIE_CONFIG: /app/config/config.yaml
+      COMFYUI_BASE_URL: "http://host.docker.internal:8188"
+      PRESETS_DIR: /app/data/character_presets
+    volumes:
+      # Configuration (écrasée par l'utilisateur, pas dans l'image).
+      - ./config:/app/config:ro
+      # Données runtime (sessions, historiques, photos, users.json).
+      - ./server/data:/app/server/data
+      # Personnages prédéfinis + scénarios (portés du projet OpenWebUI).
+      - ./data/character_presets:/app/data/character_presets:ro
+    restart: unless-stopped
+    networks:
+      - openwebui-net
+
+networks:
+  openwebui-net:
+    external: true
