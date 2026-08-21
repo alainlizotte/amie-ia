@@ -587,6 +587,45 @@ async def _generate_portrait(sid: str) -> None:
         })
 
 
+async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
+                                    stage: str) -> str:
+    """Fragments visuels de la scène en cours, dérivés des derniers échanges.
+
+    Un appel LLM court (« directeur photo ») transforme la fin de la
+    conversation en description d'image (30 mots max), sanitizée selon le
+    stade. En cas d'échec/timeout : "" — le prompt retombe sur la fiche du
+    personnage seule (jamais bloquant).
+    """
+    llm = getattr(app.state, "client", None)
+    if llm is None:
+        return ""
+    try:
+        hist = [m for m in ChatHistory(sid).history
+                if m.role in ("user", "assistant")][-8:]
+        if not hist:
+            return ""
+        nom = character.get("name") or "character"
+        transcript = "\n".join(
+            f"{'user' if m.role == 'user' else nom}: {m.content[:280]}"
+            for m in hist
+        )
+        msgs = [
+            Message(role="system",
+                    content=img_helpers.director_system(character, stage)),
+            Message(role="user", content=transcript),
+        ]
+        async with asyncio.timeout(45):
+            res = await llm.chat(msgs, temperature=0.3)
+    except Exception as e:
+        _log.warning("[photo] directeur photo indisponible (%s) — "
+                     "prompt déterministe seul", e)
+        return ""
+    scene = img_helpers.sanitize_scene(res.content, stage)
+    if scene:
+        _log.info("[photo] scène détectée : %s", scene)
+    return scene
+
+
 async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
     """Traite une demande de photo — décision 100 % côté serveur.
 
@@ -620,7 +659,11 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
             return
 
         character = profile.get("character", {})
-        prompt = img_helpers.photo_prompt_for_stage(character, stage, hint or "")
+        scene = await _scene_de_la_conversation(sid, character, stage)
+        prompt = img_helpers.photo_prompt_for_stage(
+            character, stage, hint or "", scene,
+        )
+        _log.info("[photo] prompt : %s", prompt)
         dest_dir = st.photos_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         fname = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"

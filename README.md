@@ -43,7 +43,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
 | 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
-| 📸 **Album photo** | Portrait généré automatiquement à la rencontre, photos supplémentaires à débloquer |
+| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — toujours vues de **vos yeux** |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
 | 👤 **Comptes locaux** | Chaque utilisateur voit uniquement ses sessions |
@@ -92,8 +92,10 @@ config/          config.yaml (local, gitignoré) — voir config.example.yaml
 - **Souvenirs** : extraction périodique (tous les 10 tours) + rappel
   sémantique top-k.
 - **Photos** : portrait généré automatiquement à la création de session ;
-  demandes via bouton 📷 (refusées avant le stade « neutre », tenue contrainte
-  par stade).
+  demandes via bouton 📷 (refusées avant le stade « neutre »). Le prompt est
+  construit par un « directeur photo » : un appel LLM court résume les
+  derniers échanges en fragments visuels (lieu, pose, regard), sanitisés
+  selon le stade — et le point de vue est toujours celui de l'utilisateur.
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif,
   libérant la place pour ComfyUI.
 - **18+** : mention affichée sur l'écran de connexion + case de déclaration
