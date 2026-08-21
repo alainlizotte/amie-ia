@@ -68,7 +68,14 @@ export function SessionPage() {
           characterName={profile.character.name}
           canRequestPhoto={canPhoto}
           onSend={(text) => socketRef.current?.say(text)}
-          onPhotoRequest={(hint) => socketRef.current?.photoRequest(hint)}
+          onPhotoRequest={(hint) => {
+            // Feedback instantané au clic (le serveur confondra ensuite
+            // avec son propre événement image_pending).
+            useAmie.getState().setStatus(
+              "📸 Photo en cours de génération (jusqu'à 60 s)...",
+            );
+            socketRef.current?.photoRequest(hint);
+          }}
         />
       </div>
 

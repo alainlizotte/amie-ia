@@ -140,6 +140,18 @@ Copier `config.example.yaml` vers `config/config.yaml` puis ajuster :
 backend LLM (`llamacpp`/`ollama`), modèle, paramètres relationnels
 (cooldown des scénarios, décroissance, seuils de similarité…).
 
+## 🧠 Modèle IA
+
+Le modèle de chat du projet est **`gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0.gguf`**
+— fourni dans le dossier `models/` du projet (non versionné : trop volumineux).
+
+Il est servi par le conteneur `llamacpp` (port 8080, réseau `openwebui-net`) :
+copier le fichier GGUF dans le dossier `models/` du projet « d&d app - copie »
+puis `docker restart llamacpp`. Le nom déclaré dans
+`config/config.yaml` (`llm.model`) doit correspondre exactement au nom du
+fichier sans l'extension `.gguf` — c'est déjà le cas dans
+`config.example.yaml`.
+
 ## API
 
 | Méthode | Route | Description |

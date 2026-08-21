@@ -660,6 +660,13 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
             })
             return
 
+        # Annonce IMMÉDIATE (avant le directeur photo et la génération) :
+        # l'utilisateur doit voir l'indication dès son appui sur 📷.
+        await hub.broadcast({
+            "type": "tool_event",
+            "event": {"type": "image_pending", "msg": img_helpers.MSG_PENDING_PHOTO},
+        })
+
         character = profile.get("character", {})
         scene = await _scene_de_la_conversation(sid, character, stage,
                                                 hint or "")
@@ -672,10 +679,6 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
         fname = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         dest = dest_dir / fname
 
-        await hub.broadcast({
-            "type": "tool_event",
-            "event": {"type": "image_pending", "msg": img_helpers.MSG_PENDING_PHOTO},
-        })
         path = await img_helpers.generer_image(image, "photo", prompt, str(dest))
         if path is None:
             await hub.broadcast({
