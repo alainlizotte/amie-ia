@@ -50,9 +50,18 @@ export function SessionPage() {
       {/* Colonne chat */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-rose-900/40 bg-[#24101c]/60">
         <div className="flex items-center justify-between border-b border-rose-900/40 px-4 py-2.5">
-          <div>
-            <h2 className="font-semibold text-rose-100">{profile.character.name}</h2>
-            <p className="text-xs text-rose-200/40">{profile.character.title}</p>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/sessions"
+              title="Retour à Mes rencontres"
+              className="rounded-md border border-rose-800/60 px-2.5 py-1 text-xs text-rose-200 transition hover:bg-rose-900/40"
+            >
+              ←
+            </Link>
+            <div>
+              <h2 className="font-semibold text-rose-100">{profile.character.name}</h2>
+              <p className="text-xs text-rose-200/40">{profile.character.title}</p>
+            </div>
           </div>
           <Link
             to={`/session/${sid}/album`}

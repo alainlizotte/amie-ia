@@ -90,12 +90,14 @@ def portrait_prompt(character: dict[str, Any]) -> str:
 
 
 def pov_clause(character: dict[str, Any]) -> str:
-    """Point de vue constant : la photo est vue des YEUX de l'utilisateur."""
+    """Cadrage constant : la photo est vue des YEUX de l'utilisateur.
+    Le REGARD du personnage n'est pas imposé — il dépend de la scène
+    (décrit par le directeur photo : contact visuel, regard fuyant,
+    concentré sur une activité…)."""
     p = _pronoun(character)
-    verb = "look" if p == "they" else "looks"
     return (
         f"point of view photograph taken from the eyes of the person "
-        f"{p} is talking to, {p} {verb} directly at you"
+        f"{p} is talking to"
     )
 
 
@@ -210,11 +212,14 @@ def director_system(character: dict[str, Any], stage: str,
         f"Describe the COMPLETE visual content of one photograph of {name}: "
         f"{poss} physical appearance (face, hair, body), {poss} EXACT "
         f"current outfit or state of dress in THIS scene, place/location, "
-        f"{poss} pose and action, {poss} gaze toward the viewer.",
+        f"{poss} pose and action, {poss} gaze and expression.",
         f"Fixed appearance of {name} (keep consistent): "
         f"{str(character.get('appearance') or 'unspecified')[:280]}",
         f"IMPORTANT: what {p} is wearing RIGHT NOW may differ from "
         f"{poss} usual everyday style — describe the actual current state.",
+        f"Her gaze depends on the scene: eye contact with the viewer only "
+        f"when it feels natural (she may look away, look down, or be "
+        f"absorbed in an activity).",
         "If the user made a specific request in the conversation and "
         f"{name} accepted it, agreed to it or is doing it, that request "
         "has TOP PRIORITY — describe exactly what was asked.",

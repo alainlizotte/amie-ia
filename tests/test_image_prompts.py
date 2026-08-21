@@ -22,14 +22,20 @@ _CHAR = {
 
 
 class TestPov:
-    def test_pov_toujours_present(self):
+    def test_cadrage_pov_toujours_present(self):
         p = photo_prompt_for_stage(_CHAR, "neutre")
         assert "point of view" in p
-        assert "looks directly at you" in p
+        assert "taken from the eyes" in p
+
+    def test_regard_non_impose(self):
+        # Le regard dépend de la scène : plus de "looks directly at you".
+        p = photo_prompt_for_stage(_CHAR, "neutre")
+        assert "looks directly at you" not in p
+        assert "directly at you" not in pov_clause(_CHAR)
 
     def test_pov_clause_masculin(self):
         c = dict(_CHAR, gender="M")
-        assert "he looks directly at you" in pov_clause(c)
+        assert "eyes of the person he is talking to" in pov_clause(c)
 
     def test_scene_inserree_dans_le_prompt(self):
         p = photo_prompt_for_stage(
