@@ -588,13 +588,14 @@ async def _generate_portrait(sid: str) -> None:
 
 
 async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
-                                    stage: str) -> str:
+                                    stage: str, user_request: str = "") -> str:
     """Fragments visuels de la scène en cours, dérivés des derniers échanges.
 
     Un appel LLM court (« directeur photo ») transforme la fin de la
     conversation en description d'image (30 mots max), sanitizée selon le
-    stade. En cas d'échec/timeout : "" — le prompt retombe sur la fiche du
-    personnage seule (jamais bloquant).
+    stade. `user_request` : demande explicite saisie au moment du 📷 — elle
+    prime si le personnage l'a acceptée. En cas d'échec/timeout : "" — le
+    prompt retombe sur la fiche du personnage seule (jamais bloquant).
     """
     llm = getattr(app.state, "client", None)
     if llm is None:
@@ -602,7 +603,7 @@ async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
     try:
         hist = [m for m in ChatHistory(sid).history
                 if m.role in ("user", "assistant")][-8:]
-        if not hist:
+        if not hist and not user_request:
             return ""
         nom = character.get("name") or "character"
         transcript = "\n".join(
@@ -611,8 +612,9 @@ async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
         )
         msgs = [
             Message(role="system",
-                    content=img_helpers.director_system(character, stage)),
-            Message(role="user", content=transcript),
+                    content=img_helpers.director_system(
+                        character, stage, user_request)),
+            Message(role="user", content=transcript or "(no conversation yet)"),
         ]
         async with asyncio.timeout(45):
             res = await llm.chat(msgs, temperature=0.3)
@@ -659,7 +661,8 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
             return
 
         character = profile.get("character", {})
-        scene = await _scene_de_la_conversation(sid, character, stage)
+        scene = await _scene_de_la_conversation(sid, character, stage,
+                                                hint or "")
         prompt = img_helpers.photo_prompt_for_stage(
             character, stage, hint or "", scene,
         )

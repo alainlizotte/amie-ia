@@ -89,3 +89,12 @@ class TestDirecteurPhoto:
 
     def test_consigne_utilise_le_pronom(self):
         assert "her pose" in director_system(_CHAR, "neutre")
+
+    def test_demande_acceptee_prioritaire(self):
+        c = director_system(_CHAR, "neutre",
+                            user_request="sitting at the table facing me")
+        assert "TOP PRIORITY" in c
+        assert "sitting at the table facing me" in c
+
+    def test_sans_demande_pas_de_section_instruction(self):
+        assert "explicitly asks" not in director_system(_CHAR, "neutre")

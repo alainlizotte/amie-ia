@@ -171,22 +171,38 @@ def sanitize_scene(scene: str, stage: str) -> str:
     return s[:300].strip(" ,.")
 
 
-def director_system(character: dict[str, Any], stage: str) -> str:
-    """Consigne système du « directeur photo » (appel chat non-streaming)."""
+def director_system(character: dict[str, Any], stage: str,
+                    user_request: str = "") -> str:
+    """Consigne système du « directeur photo » (appel chat non-streaming).
+
+    `user_request` : demande explicite de l'utilisateur (champ au moment du
+    📷). Elle a priorité sur la scène générique si le personnage l'a
+    acceptée dans la conversation.
+    """
     p = _pronoun(character)
     poss = _possessive(character)
     name = character.get("name") or "the character"
     rule = _CLOTHING_RULES.get(stage, _CLOTHING_RULE_DEFAULT)
-    return (
-        f"You are the art director of a photorealistic photo generator. "
+    lines = [
+        "You are the art director of a photorealistic photo generator.",
         f"Based on the END of this conversation with {name}, describe ONLY "
-        f"the current visual scene: place/location, where {p} is, {poss} pose, "
-        f"{poss} action, {poss} gaze toward the viewer. "
-        f"Output short comma-separated English fragments, maximum 30 words, "
-        f"no full sentences. Strictly consistent with what was said or done. "
-        f"Clothing level allowed: {rule}. "
-        f"No camera jargon, no quality adjectives, no text or watermarks."
-    )
+        f"the current visual scene: place/location, where {p} is, "
+        f"{poss} pose, {poss} action, {poss} gaze toward the viewer.",
+        "If the user made a specific request in the conversation and "
+        f"{name} accepted it, agreed to it or is doing it, that request "
+        "has TOP PRIORITY — describe exactly what was asked.",
+        "Output short comma-separated English fragments, maximum 30 words, "
+        "no full sentences. Strictly consistent with what was said or done.",
+        f"Clothing level allowed: {rule}.",
+        "No camera jargon, no quality adjectives, no text or watermarks.",
+    ]
+    if user_request and user_request.strip():
+        lines.insert(
+            3,
+            f"The user explicitly asks for THIS photo: "
+            f"{user_request.strip()[:200]}",
+        )
+    return " ".join(lines)
 
 
 # --------------------------------------------------------------------------- #

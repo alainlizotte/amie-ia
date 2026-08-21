@@ -68,7 +68,7 @@ export function SessionPage() {
           characterName={profile.character.name}
           canRequestPhoto={canPhoto}
           onSend={(text) => socketRef.current?.say(text)}
-          onPhotoRequest={() => socketRef.current?.photoRequest()}
+          onPhotoRequest={(hint) => socketRef.current?.photoRequest(hint)}
         />
       </div>
 

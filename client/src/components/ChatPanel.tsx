@@ -19,7 +19,7 @@ export function ChatPanel({
   characterName: string;
   canRequestPhoto: boolean;
   onSend: (text: string) => void;
-  onPhotoRequest: () => void;
+  onPhotoRequest: (hint?: string) => void;
 }) {
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -34,6 +34,14 @@ export function ChatPanel({
     if (!t) return;
     onSend(t);
     setText("");
+  }
+
+  // 📷 : si une demande est écrite dans le champ, elle sert de consigne
+  // pour la photo (et le champ est vidé) ; sinon photo de la scène en cours.
+  function requestPhoto() {
+    const t = text.trim();
+    setText("");
+    onPhotoRequest(t || undefined);
   }
 
   return (
@@ -61,11 +69,11 @@ export function ChatPanel({
       <form onSubmit={submit} className="flex items-center gap-2 border-t border-rose-900/40 bg-[#24101c]/60 p-3">
         <button
           type="button"
-          onClick={onPhotoRequest}
+          onClick={requestPhoto}
           disabled={!canRequestPhoto || typing}
           title={
             canRequestPhoto
-              ? "Demander une photo"
+              ? "Demander une photo — écris ta demande dans le champ pour la préciser (ex : « assise à table face à moi »)"
               : "Débloquez le stade « Neutre » pour demander des photos"
           }
           className="shrink-0 rounded-full border border-rose-800/60 p-2.5 text-lg transition hover:bg-rose-900/40 disabled:cursor-not-allowed disabled:opacity-30"
