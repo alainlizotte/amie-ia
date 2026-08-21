@@ -1,12 +1,68 @@
-# Ami(e) IA — Rencontres virtuelles (serveur dédié)
+# 💕 Ami(e) IA — Rencontres virtuelles
 
-Application de simulation de rencontre inspirée du projet OpenWebUI « Ami(e) IA »,
-reconstruite en **serveur dédié** sur le modèle du projet « d&d app - copie » :
-FastAPI + React, mécanique relationnelle **100 % déterministe côté serveur**
-(le LLM n'incarne que le personnage — il ne calcule ni score, ni stades,
-ni scénarios, ni photos).
+> **⚠️ Contenu pour adultes averti (18 ans +)** — Cette application simule des
+> relations virtuelles et peut générer des contenus sensibles à mesure que la
+> relation évolue. Une déclaration de majorité est demandée à la connexion.
 
-## Architecture
+Application de **simulation de rencontre** avec des personnages IA : vous
+discutez avec un personnage, vos mots font évoluer la relation, et vous
+découvrez peu à peu son histoire — jusqu'à décrocher des photos et atteindre
+une relation « proche ».
+
+Le tout tourne **en local sur votre machine** (aucune donnée envoyée sur
+Internet) : chat sous llama.cpp, images sous ComfyUI, mémoire vectorielle
+sous un serveur d'embeddings.
+
+---
+
+## 🎯 Le but du jeu
+
+Chaque rencontre démarre au stade **« froid »** (score 100/1000) :
+
+```
+rejet → froid → réservé → neutre → chaleureux → proche
+```
+
+- **Discutez** avec le personnage : chaque message est analysé par un moteur
+  déterministe qui ajuste le score relationnel (+/- points selon la
+  gentillesse, l'intérêt porté, les impairs…).
+- **Faites monter la relation** : franchir un stade débloque de nouveaux
+  scénarios narratifs et le droit de demander des 📷 **photos**
+  (refusées avant le stade « neutre »).
+- **Vivez les scénarios** : le serveur injecte périodiquement des événements
+  scriptés (rendez-vous, surprises, crises…) selon votre stade — au total
+  **275 scénarios** répartis sur les personnages.
+- **Entretenez le lien** : après 3 jours sans nouvelles, la relation se
+  dégrade (-10 pts/jour). Les absents sont punis !
+- **Objectif** : atteindre le stade « proche »… et y rester.
+
+## ✨ Fonctionnalités
+
+| | |
+|---|---|
+| 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
+| 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée |
+| ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
+| 📸 **Album photo** | Portrait généré automatiquement à la rencontre, photos supplémentaires à débloquer |
+| 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
+| 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
+| 👤 **Comptes locaux** | Chaque utilisateur voit uniquement ses sessions |
+| 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
+
+## 🖼 Captures d'écran
+
+| | |
+|---|---|
+| ![Écran de connexion](screenshots/ecran_connection.png) | ![Sélection de session](screenshots/selection_session.png) |
+| ![Sélection de personnage](screenshots/sélection_personnage.png) | ![Création de personnage](screenshots/création_personnage.png) |
+| ![Conversation principale](screenshots/chat_principal.png) | ![Album photo](screenshots/album_photo.png) |
+
+## ⚙️ Comment ça marche
+
+La particularité d'Ami(e) IA : la mécanique de jeu est **100 % déterministe
+et côté serveur**. Le LLM n'incarne QUE le personnage — il ne calcule ni
+score, ni stades, ni scénarios, ni photos. Impossible de le convaincre de
+« tricher ».
 
 ```
 client/          React 18 + TS + Vite 6 + Tailwind v4 (build → server/static)
@@ -23,23 +79,27 @@ server/data/     Runtime : sessions, historiques, photos, users.json
 config/          config.yaml (local, gitignoré) — voir config.example.yaml
 ```
 
-## Mécanique (indépendante du LLM)
+### Mécanique détaillée
 
 - **Score relationnel** (100 au départ) ajusté après chaque message par un
   moteur mots-clés/patterns ; stades : rejet → froid → réservé → neutre →
   chaleureux → proche.
 - **Scénarios** (lettres A-K par personnage) injectés côté serveur selon les
   gates de stade ; consommation détectée par similarité cosinus entre le
-  scénario et la réponse (embeddings llamaembed), forcée après 3 tours.
-- **Décroissance temporelle** après 3 jours d'absence (-10 pts/jour, plafond -150).
-- **Souvenirs** : extraction périodique (tous les 10 tours) + rappel sémantique top-k.
+  scénario et la réponse (embeddings), forcée après 3 tours.
+- **Décroissance temporelle** après 3 jours d'absence (-10 pts/jour,
+  plafond -150).
+- **Souvenirs** : extraction périodique (tous les 10 tours) + rappel
+  sémantique top-k.
 - **Photos** : portrait généré automatiquement à la création de session ;
   demandes via bouton 📷 (refusées avant le stade « neutre », tenue contrainte
   par stade).
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif,
   libérant la place pour ComfyUI.
+- **18+** : mention affichée sur l'écran de connexion + case de déclaration
+  de majorité obligatoire.
 
-## Démarrage (Docker, recommandé)
+## 🚀 Démarrage (Docker, recommandé)
 
 Prérequis : les conteneurs `llamacpp` (chat) et `llamaembed` (embeddings)
 tournent sur le réseau `openwebui-net` — démarrés via le docker-compose du
@@ -56,7 +116,7 @@ cd "..\Ami(e) IA app"
 
 ComfyUI doit tourner sur l'hôte (port 8188) pour les images.
 
-## Développement local
+## 🛠 Développement local
 
 ```powershell
 python -m venv .venv
