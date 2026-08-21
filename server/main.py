@@ -918,7 +918,9 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
 
             await ws.send_json({"type": "sys", "event": "error",
                                 "detail": f"type inconnu: {mtype}"})
-    except WebSocketDisconnect:
+    # RuntimeError : déconnexion du client pendant la fenêtre d'ouverture
+    # (receive_text appelé alors que le socket n'est plus/ pas encore CONNECTED).
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         hub.connections.discard(ws)
