@@ -99,6 +99,22 @@ def pov_clause(character: dict[str, Any]) -> str:
     )
 
 
+def outfit_clause(stage: str) -> str:
+    """Contrainte de tenue par stade — toujours présente (garde-fou dur)."""
+    if stage == "proche":
+        return "outfit unrestricted, intimate tasteful composition"
+    if stage == "chaleureux":
+        return (
+            "wearing revealing casual outfit or elegant lingerie, "
+            "sensual but never nude, tasteful pose"
+        )
+    # neutre / reserve
+    return (
+        "fully dressed in a sober stylish outfit, modest pose, "
+        "nothing suggestive"
+    )
+
+
 def photo_prompt_for_stage(
     character: dict[str, Any],
     stage: str,
@@ -108,29 +124,31 @@ def photo_prompt_for_stage(
     """Prompt d'une photo demandée en cours de session — contraint par stade.
 
     `user_hint` : contexte optionnel saisi dans le GUI (lieu, ambiance…).
-    `scene`     : fragments visuels dérivés de la conversation par le
-                  « directeur photo » LLM (déjà sanitisés via sanitize_scene).
-    Le point de vue est TOUJOURS celui de l'utilisateur (pov_clause).
+    `scene`     : description complète produite par le « directeur photo »
+                  (apparence actuelle, tenue RÉELLE portée, lieu, pose,
+                  regard — déjà sanitizée via sanitize_scene).
+
+    Quand la scène existe, elle fait foi SEULE pour l'apparence/la tenue :
+    la fiche du personnage n'est PAS réinjectée (son style quotidien —
+    « elle porte des robes fluides » — contredirait une scène où elle est
+    nue ou autrement habillée, et noierait le modèle d'image sous des
+    directives contradictoires). La clause de tenue du stade reste
+    systématiquement ajoutée en garde-fou.
     """
+    scene_clean = (scene or "").strip(" ,.")
+    if scene_clean:
+        return (
+            f"photograph of {scene_clean}, {outfit_clause(stage)}, "
+            f"{pov_clause(character)}, "
+            "photorealistic, natural lighting, warm colors, "
+            "romantic dating profile photo style, high resolution, no text"
+        )
+
+    # Fallback déterministe (directeur indisponible) : fiche du personnage.
     desc = _base_description(character)
     hint = f", {user_hint.strip()}" if user_hint and user_hint.strip() else ""
-    scene_part = f", {scene.strip(' ,.')}" if scene and scene.strip(" ,.") else ""
-
-    if stage == "proche":
-        outfit = "outfit unrestricted, intimate tasteful composition"
-    elif stage == "chaleureux":
-        outfit = (
-            "wearing revealing casual outfit or elegant lingerie, "
-            "sensual but never nude, tasteful pose"
-        )
-    else:  # neutre / reserve
-        outfit = (
-            "fully dressed in a sober stylish outfit, modest pose, "
-            "nothing suggestive"
-        )
-
     return (
-        f"photograph of {desc}{hint}{scene_part}, {outfit}, "
+        f"photograph of {desc}{hint}, {outfit_clause(stage)}, "
         f"{pov_clause(character)}, "
         "photorealistic, natural lighting, warm colors, "
         "romantic dating profile photo style, high resolution, no text"
@@ -175,6 +193,10 @@ def director_system(character: dict[str, Any], stage: str,
                     user_request: str = "") -> str:
     """Consigne système du « directeur photo » (appel chat non-streaming).
 
+    Le directeur produit la description COMPLÈTE de la photo : apparence
+    physique (issue de la fiche) + tenue RÉELLEMENT portée dans la scène +
+    lieu/pose/action/regard. C'est lui qui arbitre — la fiche n'est jamais
+    réinjectée à côté, pour éviter les directives contradictoires.
     `user_request` : demande explicite de l'utilisateur (champ au moment du
     📷). Elle a priorité sur la scène générique si le personnage l'a
     acceptée dans la conversation.
@@ -185,20 +207,25 @@ def director_system(character: dict[str, Any], stage: str,
     rule = _CLOTHING_RULES.get(stage, _CLOTHING_RULE_DEFAULT)
     lines = [
         "You are the art director of a photorealistic photo generator.",
-        f"Based on the END of this conversation with {name}, describe ONLY "
-        f"the current visual scene: place/location, where {p} is, "
-        f"{poss} pose, {poss} action, {poss} gaze toward the viewer.",
+        f"Describe the COMPLETE visual content of one photograph of {name}: "
+        f"{poss} physical appearance (face, hair, body), {poss} EXACT "
+        f"current outfit or state of dress in THIS scene, place/location, "
+        f"{poss} pose and action, {poss} gaze toward the viewer.",
+        f"Fixed appearance of {name} (keep consistent): "
+        f"{str(character.get('appearance') or 'unspecified')[:280]}",
+        f"IMPORTANT: what {p} is wearing RIGHT NOW may differ from "
+        f"{poss} usual everyday style — describe the actual current state.",
         "If the user made a specific request in the conversation and "
         f"{name} accepted it, agreed to it or is doing it, that request "
         "has TOP PRIORITY — describe exactly what was asked.",
-        "Output short comma-separated English fragments, maximum 30 words, "
+        "Output short comma-separated English fragments, maximum 60 words, "
         "no full sentences. Strictly consistent with what was said or done.",
         f"Clothing level allowed: {rule}.",
         "No camera jargon, no quality adjectives, no text or watermarks.",
     ]
     if user_request and user_request.strip():
         lines.insert(
-            3,
+            4,
             f"The user explicitly asks for THIS photo: "
             f"{user_request.strip()[:200]}",
         )
