@@ -136,6 +136,7 @@ function CustomForm({
     personality: "",
   });
   const [userName, setUserName] = useState(defaultUserName);
+  const [ageErreur, setAgeErreur] = useState<string | null>(null);
 
   const field =
     "w-full rounded-lg border border-rose-900/50 bg-[#1a0b14] px-3 py-2 text-sm text-rose-50 outline-none focus:border-rose-500";
@@ -145,15 +146,33 @@ function CustomForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        const age = f.age.trim();
+        if (age) {
+          const n = Number(age);
+          if (!Number.isFinite(n) || n < 18) {
+            setAgeErreur("L'âge du personnage doit être d'au moins 18 ans.");
+            return;
+          }
+        }
+        setAgeErreur(null);
         onSubmit({
           character: { ...f },
           user_info: { name: userName },
         });
       }}
-      className="max-h-[55vh] space-y-3 overflow-y-auto pr-1"
+      className="max-h-[75vh] space-y-3 overflow-y-auto pr-1"
     >
+      <div>
+        <label className={label}>Votre prénom (dans l'histoire)</label>
+        <input
+          className={field}
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          placeholder="comment il/elle vous appelle"
+        />
+      </div>
       <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-2">
+        <div>
           <label className={label}>Prénom du personnage *</label>
           <input
             className={field}
@@ -167,11 +186,17 @@ function CustomForm({
           <input
             className={field}
             value={f.age}
-            onChange={(e) => setF({ ...f, age: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, age: e.target.value });
+              setAgeErreur(null);
+            }}
+            inputMode="numeric"
+            placeholder="18+"
           />
+          {ageErreur && (
+            <p className="mt-1 text-xs text-red-300">{ageErreur}</p>
+          )}
         </div>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
         <div>
           <label className={label}>Genre</label>
           <select
@@ -182,15 +207,6 @@ function CustomForm({
             <option value="F">Femme</option>
             <option value="M">Homme</option>
           </select>
-        </div>
-        <div className="col-span-2">
-          <label className={label}>Votre prénom (dans l'histoire)</label>
-          <input
-            className={field}
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            placeholder="comment il/elle vous appelle"
-          />
         </div>
       </div>
       <div>
