@@ -33,6 +33,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -541,11 +543,26 @@ async def session_photos(sid: str, user: str = "") -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 #  Génération d'images (portrait à la création + photos demandées)
 # --------------------------------------------------------------------------- #
+def _preset_portrait_cache(preset_id: str) -> Path | None:
+    """Chemin du portrait partagé d'un personnage prédéfini (ou None).
+
+    Le portrait ORIGINAL des presets est généré une seule fois puis réutilisé
+    pour toute nouvelle session (tous utilisateurs confondus). Les photos de
+    scène et les personnages personnalisés ne participent pas à ce cache.
+    """
+    clean = re.sub(r"[^A-Za-z0-9_-]", "", str(preset_id)).strip()
+    if not clean:
+        return None
+    return cfg.abs(cfg.paths.data_dir) / "preset_portraits" / f"{clean}.png"
+
+
 async def _generate_portrait(sid: str) -> None:
     """Génère la photo de référence du personnage (arrière-plan, sans LLM).
 
     Sérialisée sur hub.turn_lock : sans cela, un tour de chat concurrent
     sauvegarderait sa copie du profil et écraserait la photo ajoutée.
+    Si le personnage est un preset dont le portrait original a déjà été
+    généré, il est copié depuis le cache sans rappeler ComfyUI.
     """
     image = getattr(app.state, "image", None)
     st = _state(sid)
@@ -559,18 +576,37 @@ async def _generate_portrait(sid: str) -> None:
         dest_dir = st.photos_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / "portrait.png"
-        await hub.broadcast({
-            "type": "tool_event",
-            "event": {"type": "image_pending", "msg": img_helpers.MSG_PENDING_PORTRAIT},
-        })
-        path = await img_helpers.generer_image(image, "portrait", prompt, str(dest))
-        if path is None:
-            _log.warning("[portrait] échec génération pour %s (voir logs image)", sid)
+
+        # Cache partagé : portrait original déjà généré pour ce preset ?
+        cache = _preset_portrait_cache(character.get("preset_id") or "")
+        from_cache = False
+        if cache is not None and cache.is_file():
+            try:
+                shutil.copyfile(cache, dest)
+                from_cache = True
+            except OSError:
+                from_cache = False  # cache illisible : on régénère normalement
+
+        if not from_cache:
             await hub.broadcast({
                 "type": "tool_event",
-                "event": {"type": "error", "msg": "⚠️ Génération du portrait impossible (ComfyUI injoignable ?)."},
+                "event": {"type": "image_pending", "msg": img_helpers.MSG_PENDING_PORTRAIT},
             })
-            return
+            path = await img_helpers.generer_image(image, "portrait", prompt, str(dest))
+            if path is None:
+                _log.warning("[portrait] échec génération pour %s (voir logs image)", sid)
+                await hub.broadcast({
+                    "type": "tool_event",
+                    "event": {"type": "error", "msg": "⚠️ Génération du portrait impossible (ComfyUI injoignable ?)."},
+                })
+                return
+            if cache is not None:
+                try:
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(dest, cache)
+                except OSError:
+                    _log.warning("[portrait] cache non écrit pour %s", cache.name)
+
         profile = st.load()
         st.add_photo(profile, dest.name, "portrait",
                      img_helpers.caption_for("portrait", "", character.get("name", "")))
