@@ -22,10 +22,12 @@ export function ChatPanel({
   onPhotoRequest: (hint?: string) => void;
 }) {
   const [text, setText] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
+  // Défilement du fil uniquement — jamais de scrollIntoView, qui remonterait
+  // aussi les ancêtres (fenêtre comprise) et décalerait toute l'app.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, typing, status]);
 
   function submit(e: React.FormEvent) {
@@ -47,7 +49,7 @@ export function ChatPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Fil de messages */}
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m) => (
           <MessageBubble key={m.id} m={m} characterName={characterName} />
         ))}
@@ -62,11 +64,13 @@ export function ChatPanel({
         {!typing && status && (
           <p className="px-2 text-xs italic text-fuchsia-300/60">{status}</p>
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Saisie */}
-      <form onSubmit={submit} className="flex items-center gap-2 border-t border-rose-900/40 bg-[#24101c]/60 p-3">
+      <form
+        onSubmit={submit}
+        className="pb-safe-area flex items-center gap-2 border-t border-rose-900/40 bg-[#24101c]/60 p-3"
+      >
         <button
           type="button"
           onClick={requestPhoto}

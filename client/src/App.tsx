@@ -38,7 +38,7 @@ export default function App() {
           </div>
         )}
       </header>
-      <main className="min-h-0 flex-1">
+      <main className="min-h-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
     </div>
