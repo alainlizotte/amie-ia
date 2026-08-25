@@ -9,13 +9,12 @@ import { useAmie } from "../store";
 
 export function AlbumPage() {
   const { sid } = useParams<{ sid: string }>();
-  const user = useAmie((s) => s.user);
   const characterName = useAmie((s) => s.profile?.character.name ?? "");
   const [selected, setSelected] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["photos", sid, user],
-    queryFn: () => apiPhotos(sid!, user),
+    queryKey: ["photos", sid],
+    queryFn: () => apiPhotos(sid!),
     enabled: !!sid,
   });
 

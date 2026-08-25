@@ -1,6 +1,6 @@
 """Intégration ComfyUI — génération d'images (portraits et photos).
 
-Copie adaptée du backend du projet D&D 3.5 : soumission d'un workflow JSON
+Soumission d'un workflow JSON
 (format API) via `POST /prompt`, polling `GET /history/{id}`, téléchargement
 du PNG via `GET /view`. Deux usages :
 - « portrait » : photo de référence du personnage (création de session) ;

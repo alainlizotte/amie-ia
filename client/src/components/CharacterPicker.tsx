@@ -11,7 +11,6 @@ export function CharacterPicker({ onCreated }: { onCreated: (sid: string) => voi
   const [creating, setCreating] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  const user = useAmie((s) => s.user);
   const userName = useAmie((s) => s.profile?.user_info?.name ?? "");
 
   const { data, isLoading } = useQuery({
@@ -23,7 +22,7 @@ export function CharacterPicker({ onCreated }: { onCreated: (sid: string) => voi
     setCreating(true);
     setErreur(null);
     try {
-      const res = await apiCreateSession({ user, ...payload });
+      const res = await apiCreateSession(payload);
       onCreated(res.session_id);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : "Erreur inconnue");

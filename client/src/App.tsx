@@ -1,18 +1,18 @@
 // Coquille applicative — bandeau supérieur + zone de contenu (Outlet).
 
 import { Outlet, useNavigate } from "react-router-dom";
+import { setToken } from "./api/rest";
 import { useAmie } from "./store";
 
 export default function App() {
   const user = useAmie((s) => s.user);
   const setUser = useAmie((s) => s.setUser);
-  const setPassword = useAmie((s) => s.setPassword);
   const reset = useAmie((s) => s.reset);
   const navigate = useNavigate();
 
   function logout() {
     setUser("");
-    setPassword("");
+    setToken("");
     reset();
     navigate("/login");
   }

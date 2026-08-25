@@ -2,7 +2,7 @@
 # (config/config.yaml est gitigné : c'est votre config locale personnelle.)
 
 llm:
-  # "llamacpp" (recommandé, réutilise le conteneur du projet D&D) | "ollama"
+  # "llamacpp" (recommandé, conteneur llama.cpp fourni par le compose) | "ollama"
   backend: llamacpp
   # Docker : http://llamacpp:8080/v1 — Local : http://127.0.0.1:8080/v1
   base_url: http://llamacpp:8080/v1
@@ -37,6 +37,13 @@ relation:
   decay_max_loss: 150       # perte maximale cumulée
   summarize_every_turns: 10 # fréquence d'extraction de souvenirs
   max_memories: 40          # FIFO des souvenirs stockés
+  # Messages proactifs du personnage (il écrit le premier après un silence)
+  proactive_enabled: true
+  proactive_after_hours: 24.0     # silence requis avant sa première initiative
+  proactive_interval_hours: 24.0  # délai min entre deux initiatives (1 par jour)
+  proactive_penalty: 50           # -points si message envoyé sans réponse au précédent
+  proactive_check_seconds: 300    # période de la boucle de vérification
+  proactive_first_delay_seconds: 30
 
 memory:
   enabled: true
@@ -50,3 +57,7 @@ image:
   enabled: true
   base_url: ""              # vide → env COMFYUI_BASE_URL → http://127.0.0.1:8188
   timeout_total: 300
+  # Initiative du personnage : photos envoyées de lui-même (stade Neutre+)
+  initiative_enabled: true
+  initiative_chance_turn: 0.10       # proba par tour de conversation
+  initiative_chance_proactive: 0.30  # proba avec un message spontané

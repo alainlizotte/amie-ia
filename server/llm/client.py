@@ -1,6 +1,6 @@
 """Client LLM — endpoint OpenAI-compatible (llama.cpp / Ollama).
 
-Copie adaptée du client du projet D&D 3.5 : appels non-streaming et
+Appels non-streaming et
 streaming SSE, strip des blocs thinking Gemma 4, chargement/déchargement
 du modèle en VRAM (router llama.cpp) avec retry sur HTTP 500 pour survivre
 à la contention VRAM avec ComfyUI.

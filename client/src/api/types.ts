@@ -21,6 +21,8 @@ export interface PublicProfile {
   stage: string;
   interaction_count: number;
   last_interaction: string | null;
+  /** Messages spontanés du personnage restés sans réponse (badge « ! »). */
+  unanswered_messages: number;
   portrait_url: string | null;
   photos_count: number;
   events_consumed: number;
@@ -66,7 +68,7 @@ export type ToolEvent =
 
 /** Messages sortants (client → serveur). */
 export type WsOutMessage =
-  | { type: "join"; user: string; password: string }
+  | { type: "join"; token: string }
   | { type: "say"; text: string }
   | { type: "photo_request"; hint?: string };
 
@@ -89,6 +91,7 @@ export type WsInMessage =
       interaction_count: number;
       events_consumed: number;
       event_consumed_now: boolean;
+      unanswered_messages: number;
     };
 
 /** Libellés des stades relationnels (miroir server/relation/stages.py). */

@@ -1,8 +1,8 @@
 """Souvenirs sémantiques de la session — embeddings via le serveur llamaembed.
 
-Réutilise le même serveur d'embeddings que le RAG du projet D&D
-(llama.cpp `--embedding`, modèle embeddinggemma, endpoint OpenAI-compatible
-`/v1/embeddings`). Les souvenirs sont des faits courts sur l'utilisateur ;
+Serveur d'embeddings llama.cpp (`--embedding`, modèle embeddinggemma,
+endpoint OpenAI-compatible `/v1/embeddings`). Les souvenirs sont des faits
+courts sur l'utilisateur ;
 chaque fait est embeddé à l'écriture et stocké dans le profil JSON. Au tour
 suivant, la requête utilisateur est embeddée et les k souvenirs les plus
 proches (cosinus) sont injectés dans le prompt système.
@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 import httpx
 
-# Préfixes de tâche recommandés pour embeddinggemma (cf. rag/embeddings.py D&D).
+# Préfixes de tâche recommandés pour embeddinggemma.
 _DOC_PREFIX = "title: none | text: "
 _QUERY_PREFIX = "query: "
 _MAX_INPUT_CHARS = 4800

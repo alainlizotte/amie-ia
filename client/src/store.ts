@@ -6,7 +6,7 @@ import { create } from "zustand";
 import type { ChatMessage, PublicProfile } from "./api/types";
 
 const USER_KEY = "amie.user";
-const PASSWORD_KEY = "amie.password";
+const TOKEN_KEY = "amie.token";
 
 function initialUser(): string {
   try {
@@ -16,11 +16,10 @@ function initialUser(): string {
   }
 }
 
-/** Mot de passe en sessionStorage : survit au rechargement de l'onglet
- *  (le WS doit pouvoir se ré-authentifier) mais pas à la fermeture. */
-function initialPassword(): string {
+/** Token Bearer (30 jours) — authentifie REST et WS. */
+function initialToken(): string {
   try {
-    return sessionStorage.getItem(PASSWORD_KEY) || "";
+    return localStorage.getItem(TOKEN_KEY) || "";
   } catch {
     return "";
   }
@@ -29,9 +28,9 @@ function initialPassword(): string {
 interface AmieStore {
   // -- Compte ------------------------------------------------------------- //
   user: string;
-  password: string;
+  token: string;
   setUser: (u: string) => void;
-  setPassword: (p: string) => void;
+  setToken: (t: string) => void;
 
   // -- Session courante --------------------------------------------------- //
   sessionId: string | null;
@@ -68,7 +67,7 @@ const uid = () =>
 
 export const useAmie = create<AmieStore>((set) => ({
   user: initialUser(),
-  password: initialPassword(),
+  token: initialToken(),
   setUser: (u) => {
     set({ user: u });
     try {
@@ -78,13 +77,13 @@ export const useAmie = create<AmieStore>((set) => ({
       /* localStorage indisponible */
     }
   },
-  setPassword: (p) => {
-    set({ password: p });
+  setToken: (t) => {
+    set({ token: t });
     try {
-      if (p) sessionStorage.setItem(PASSWORD_KEY, p);
-      else sessionStorage.removeItem(PASSWORD_KEY);
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
     } catch {
-      /* sessionStorage indisponible */
+      /* localStorage indisponible */
     }
   },
 
@@ -133,7 +132,7 @@ export const useAmie = create<AmieStore>((set) => ({
       ),
     })),
 
-  // Conserve user/password : ce sont des choix de session navigateur.
+  // Conserve user/token : ce sont des choix de session navigateur.
   reset: () =>
     set({
       sessionId: null,

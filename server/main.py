@@ -1,20 +1,25 @@
 """Point d'entrée FastAPI de l'application Ami(e) IA — serveur dédié.
 
-Architecture identique au projet D&D 3.5 (« d&d app - copie ») :
+Architecture :
 - FastAPI + WebSocket pour le chat temps réel ;
-- LLM local via llama.cpp (endpoint OpenAI-compatible) — réutilisé du projet D&D ;
-- embeddings via llamaembed (souvenirs sémantiques) — réutilisé du projet D&D ;
+- auth par comptes locaux + tokens Bearer HMAC (server/auth.py) ;
+- LLM local via llama.cpp (endpoint OpenAI-compatible) ;
+- embeddings via llamaembed (souvenirs sémantiques) ;
 - images via ComfyUI (portraits et photos de session) ;
-- mécanique relationnelle 100 % déterministe côté serveur (server/relation/).
+- mécanique relationnelle 100 % déterministe côté serveur (server/relation/) ;
+- messages proactifs : le personnage écrit le premier après 24 h de silence
+  (1 par jour max) ; sans réponse avant le message suivant → -50 points.
 
 Le LLM n'appelle AUCUN outil : il incarne uniquement le personnage. Score,
 stades, scénarios, photos et souvenirs sont gérés par le serveur.
 
 Endpoints REST :
 - GET  /api/health              → état des backends (llm, embeddings, images)
-- POST /api/login               → crée/vérifie un utilisateur (SHA-256)
+- POST /api/auth/inscription    → crée un compte (PBKDF2) et renvoie un token
+- POST /api/auth/connexion      → connecte un compte existant → token Bearer
+- GET  /api/auth/moi            → identité du porteur du token
 - GET  /api/presets             → personnages prédéfinis (pour le GUI)
-- GET  /api/sessions            → sessions d'un utilisateur
+- GET  /api/sessions            → sessions de l'utilisateur (auth requise)
 - POST /api/sessions            → crée une session (+ génération du portrait)
 - GET  /api/sessions/{id}       → profil public d'une session
 - DELETE /api/sessions/{id}     → supprime la session et ses photos
@@ -22,7 +27,7 @@ Endpoints REST :
 - WS   /ws/{id}                 → canal chat (join/say/photo_request)
 
 Au WS, format des messages reçus :
-    {"type": "join", "user": "alain", "password": "…"}
+    {"type": "join", "token": "nom|exp|sig"}   (token obtenu via /api/auth/*)
     {"type": "say", "text": "salut!"}
     {"type": "photo_request", "hint": "au café"}
 """
@@ -30,21 +35,22 @@ Au WS, format des messages reçus :
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
+import random
 import re
 import shutil
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import auth as auth_mod
 from .config import AppConfig, get_config
 from .image import helpers as img_helpers
 from .llm.client import LLMClient, Message
@@ -76,7 +82,7 @@ async def lifespan(app: FastAPI):
     cfg = get_config()
     app.state.cfg = cfg
 
-    # Client LLM (llama.cpp réutilisé du projet D&D).
+    # Client LLM (llama.cpp).
     client = LLMClient(cfg.llm)
     available = await client.list_models()
     model_names = [m.get("id", "") for m in available]
@@ -90,7 +96,7 @@ async def lifespan(app: FastAPI):
     app.state.client = client
     app.state.prompt_builder = PromptBuilder(cfg)
 
-    # Embedder (llamaembed réutilisé du projet D&D) — souvenirs sémantiques.
+    # Embedder (llamaembed) — souvenirs sémantiques.
     embedder: Optional[Embedder] = None
     if cfg.memory.enabled:
         embedder = Embedder(
@@ -116,9 +122,21 @@ async def lifespan(app: FastAPI):
         ok = await app.state.image.dispo()
         print(f"[amie] ComfyUI {'OK' if ok else 'injoignable'} : {app.state.image.base_url}")
 
+    # Boucle des messages proactifs (le personnage écrit après un silence).
+    proactive_task: Optional[asyncio.Task] = None
+    if cfg.relation.proactive_enabled:
+        proactive_task = asyncio.create_task(_proactive_loop())
+        print(
+            f"[amie] Messages proactifs activés : silence {cfg.relation.proactive_after_hours} h, "
+            f"1 max / {cfg.relation.proactive_interval_hours} h, "
+            f"pénalité {cfg.relation.proactive_penalty} pts."
+        )
+
     print("[amie] Démarrage terminé.")
     yield
 
+    if proactive_task is not None:
+        proactive_task.cancel()
     await client.aclose()
     if embedder is not None:
         await embedder.aclose()
@@ -140,55 +158,21 @@ app.add_middleware(
 
 
 # --------------------------------------------------------------------------- #
-#  Utilisateurs — data/users.json (hash SHA-256, jamais en clair)
+#  Authentification — comptes locaux + tokens Bearer (server/auth.py,
+#  PBKDF2-SHA256 + HMAC).
 # --------------------------------------------------------------------------- #
-def _users_path() -> Path:
-    return cfg.abs(cfg.paths.data_dir) / "users.json"
+def _data_dir() -> str:
+    return str(cfg.abs(cfg.paths.data_dir))
 
 
-def _load_users() -> dict[str, Any]:
-    path = _users_path()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {"users": {}}
-
-
-def _save_users(users: dict[str, Any]) -> None:
-    path = _users_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
-
-
-def _hash_password(mdp: str) -> str:
-    return hashlib.sha256(mdp.encode("utf-8")).hexdigest()
-
-
-def _verify_user(nom: str, mot_de_passe: str) -> bool:
-    users = _load_users()
-    entry = users.get("users", {}).get(nom.strip().lower())
-    if not entry:
-        return False
-    return entry.get("password_sha256") == _hash_password(mot_de_passe)
-
-
-def _register_user(nom: str, mot_de_passe: str) -> bool:
-    """Crée l'utilisateur. Renvoie False si le nom est déjà pris."""
-    users = _load_users()
-    key = nom.strip().lower()
-    if key in users.get("users", {}):
-        return False
-    users.setdefault("users", {})[key] = {
-        "nom": nom.strip(),
-        "password_sha256": _hash_password(mot_de_passe),
-        "created": datetime.now().isoformat(),
-    }
-    _save_users(users)
-    return True
+async def utilisateur_courant(
+    authorization: str = Header(default=""),
+) -> str:
+    """Dépendance FastAPI : renvoie le nom d'utilisateur authentifié ou 401."""
+    nom = auth_mod.utilisateur_depuis_header(_data_dir(), authorization)
+    if not nom:
+        raise HTTPException(status_code=401, detail="Non authentifié.")
+    return nom
 
 
 # --------------------------------------------------------------------------- #
@@ -237,6 +221,7 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
         "stage": profile.get("relationship_stage", "froid"),
         "interaction_count": profile.get("interaction_count", 0),
         "last_interaction": profile.get("last_interaction"),
+        "unanswered_messages": int(profile.get("unanswered_messages", 0) or 0),
         "portrait_url": st.photo_url(portrait["file"]) if portrait else None,
         "photos_count": len(photos),
         "events_consumed": len(profile.get("event_history", []) or []),
@@ -341,6 +326,12 @@ async def _turn_end() -> bool:
         return _active_turns == 0
 
 
+async def _turns_idle() -> bool:
+    """True si aucun tour actif (pour décharger la VRAM hors tour)."""
+    async with _turns_guard:
+        return _active_turns == 0
+
+
 # --------------------------------------------------------------------------- #
 #  Routes REST
 # --------------------------------------------------------------------------- #
@@ -366,26 +357,36 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.post("/api/login")
-async def login(payload: dict[str, Any]) -> dict[str, Any]:
-    """Connexion. Crée le compte s'il n'existe pas encore."""
+@app.post("/api/auth/inscription")
+async def auth_inscription(payload: dict[str, Any]) -> dict[str, Any]:
+    """Crée un compte {nom, mot_de_passe} et renvoie directement un token."""
     nom = (payload.get("nom") or "").strip()
     mdp = payload.get("mot_de_passe") or ""
-    if not nom or not mdp:
-        raise HTTPException(status_code=400, detail="Nom et mot de passe requis.")
-    if len(mdp) < 4:
-        raise HTTPException(status_code=400, detail="Mot de passe trop court (4 caractères min).")
-    users = _load_users().get("users", {})
-    exists = nom.lower() in users
-    if exists:
-        if not _verify_user(nom, mdp):
-            raise HTTPException(status_code=401, detail="Mot de passe incorrect.")
-        nouveau = False
-    else:
-        if not _register_user(nom, mdp):
-            raise HTTPException(status_code=409, detail="Ce nom est déjà pris.")
-        nouveau = True
-    return {"ok": True, "user": nom.strip(), "nouveau": nouveau}
+    ok, message = auth_mod.creer_utilisateur(_data_dir(), nom, mdp)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {
+        "token": auth_mod.generer_token(_data_dir(), nom),
+        "utilisateur": nom,
+    }
+
+
+@app.post("/api/auth/connexion")
+async def auth_connexion(payload: dict[str, Any]) -> dict[str, Any]:
+    """Connecte un compte existant → token Bearer (migration legacy incluse)."""
+    nom = (payload.get("nom") or "").strip()
+    mdp = payload.get("mot_de_passe") or ""
+    if not auth_mod.verifier_identifiants(_data_dir(), nom, mdp):
+        raise HTTPException(status_code=401, detail="Identifiants incorrects.")
+    return {
+        "token": auth_mod.generer_token(_data_dir(), nom),
+        "utilisateur": nom,
+    }
+
+
+@app.get("/api/auth/moi")
+async def auth_moi(utilisateur: str = Depends(utilisateur_courant)) -> dict[str, Any]:
+    return {"utilisateur": utilisateur}
 
 
 @app.get("/api/presets")
@@ -407,11 +408,11 @@ async def list_presets() -> dict[str, Any]:
 
 
 @app.get("/api/sessions")
-async def list_sessions(user: str = "") -> dict[str, Any]:
-    """Liste des sessions créées par un utilisateur."""
-    user_key = (user or "").strip().lower()
-    if not user_key:
-        raise HTTPException(status_code=400, detail="Paramètre 'user' requis.")
+async def list_sessions(
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    """Liste des sessions créées par l'utilisateur authentifié."""
+    user_key = utilisateur.strip().lower()
     data_dir = cfg.abs(cfg.paths.data_dir)
     sessions_out: list[dict[str, Any]] = []
     for p in sorted(data_dir.glob("session_*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -441,7 +442,10 @@ def _last_chat_message(sid: str) -> str:
 
 
 @app.post("/api/sessions")
-async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
+async def create_session(
+    payload: dict[str, Any],
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
     """Crée une session de rencontre.
 
     Deux modes :
@@ -449,9 +453,7 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
     - `character` : personnage personnalisé (formulaire GUI — pas de scénarios).
     Le portrait est généré automatiquement en arrière-plan (ComfyUI).
     """
-    user = (payload.get("user") or "").strip().lower()
-    if not user:
-        raise HTTPException(status_code=400, detail="Champ 'user' requis.")
+    user = utilisateur.strip().lower()
 
     preset_id = (payload.get("preset_id") or "").strip() or None
     custom = payload.get("character") or {}
@@ -508,14 +510,20 @@ async def create_session(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/sessions/{sid}")
-async def get_session(sid: str, user: str = "") -> dict[str, Any]:
-    profile = _own_session(sid, user)
+async def get_session(
+    sid: str,
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    profile = _own_session(sid, utilisateur)
     return _public_profile(_state(sid), profile)
 
 
 @app.delete("/api/sessions/{sid}")
-async def delete_session(sid: str, user: str = "") -> dict[str, Any]:
-    _own_session(sid, user)
+async def delete_session(
+    sid: str,
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    _own_session(sid, utilisateur)
     _state(sid).delete()
     try:
         _chat_path(sid).unlink()
@@ -525,8 +533,11 @@ async def delete_session(sid: str, user: str = "") -> dict[str, Any]:
 
 
 @app.get("/api/sessions/{sid}/photos")
-async def session_photos(sid: str, user: str = "") -> dict[str, Any]:
-    profile = _own_session(sid, user)
+async def session_photos(
+    sid: str,
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    profile = _own_session(sid, utilisateur)
     st = _state(sid)
     photos = [
         {
@@ -740,6 +751,372 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  Messages proactifs — le personnage écrit le premier après un silence.
+#
+#  Règles (config relation.*) :
+#  - silence d'au moins `proactive_after_hours` (24 h par défaut) depuis le
+#    dernier échange de l'utilisateur (ou la création de la session) ;
+#  - au plus un message spontané toutes les `proactive_interval_hours` (1/jour) ;
+#  - si l'utilisateur n'a pas répondu au message précédent avant le
+#    suivant : -`proactive_penalty` points de relation (50 par défaut) ;
+#  - aucun message proactif au stade « rejet » ;
+#  - la réponse de l'utilisateur (say) remet le compteur à zéro (badge).
+#
+#  Gradation émotionnelle : plus les messages restent sans réponse, plus le
+#  ton monte — ennui léger → inquiétude → tristesse → frustration → colère
+#  blessée. Chaque message spontané exprime le manque de réponse, jamais une
+#  simple relance répétée.
+# --------------------------------------------------------------------------- #
+PROACTIVE_FALLBACKS: dict[str, list[str]] = {
+    "froid": [
+        "Hey… ça fait un moment. Tu es encore là ?",
+        "Hmm, silence radio de ton côté. Tout va bien ?",
+    ],
+    "reserve": [
+        "Salut ! Je pensais à notre dernière conversation. Ça te dit de reprendre ?",
+        "Coucou ! J'espère que ta semaine se passe bien. 🙂",
+    ],
+    "neutre": [
+        "Hey ! Je repensais à ce qu'on s'est dit… ça te prend où ces temps-ci ?",
+        "Allo ! 🙂 J'ai croisé un truc aujourd'hui qui m'a fait penser à toi.",
+    ],
+    "chaleureux": [
+        "Hey toi 😊 ton absence se fait sentir… un petit message quand tu peux ?",
+        "Je me demandais ce que tu devenais ! Écris-moi quand tu veux, hein.",
+    ],
+    "proche": [
+        "Tu me manques… juste un petit mot pour me dire que tu vas bien ? ❤️",
+        "Hey ! J'ai hâte de savoir ce que tu fais là. Raconte-moi ! 😊",
+    ],
+}
+
+# Messages suivants (le précédent est resté sans réponse) : gradation
+# étonnement/ennui → inquiétude → tristesse → frustration → colère blessée.
+# L'index = nombre de messages déjà envoyés sans réponse.
+PROACTIVE_ESCALATION: list[list[str]] = [
+    [   # 1er message ignoré : étonnement, ennui léger
+        "Allo ?",
+        "Tu ne me réponds pas ?",
+        "Je m'ennuie… juste un petit mot ?",
+        "Hey, tu es là ? Un signe de vie serait bienvenue 😅",
+    ],
+    [   # 2e : inquiétude sincère
+        "Tout va bien ? Tu commences à m'inquiéter sérieux…",
+        "Tu ne veux plus me parler ? Dis-le-moi au moins…",
+        "Ça fait longtemps rien de toi. J'espère que rien de grave ?",
+    ],
+    [   # 3e : tristesse, sentiment d'être délaissé(e)
+        "Je trouve ça dur de m'ignorer de même…",
+        "Est-ce que j'ai fait quelque chose de mal ?",
+        "Me savoir ignoré(e) de même, ça me fait de la peine…",
+    ],
+    [   # 4e : frustration visible
+        "Bon. C'est tu clair que tu m'ignores ? Ça commence à me chercher.",
+        "Un petit message, c'est vraiment trop demander ?",
+        "Là c'est frustrant. Je te parle et… rien. Rien du tout.",
+    ],
+    [   # 5e et + : colère blessée, distance
+        "Tu sais quoi ? Oublie. Je ne vais pas te courir après.",
+        "Ça suffit. Reviens quand tu auras le goût de me parler — moi j'arrête.",
+        "C'est vraiment décevant. Je mérite mieux que du silence.",
+    ],
+]
+
+
+def _last_user_activity(profile: dict[str, Any]) -> tuple[Optional[datetime], datetime]:
+    """(référence d'activité de l'utilisateur, now cohérent).
+
+    `last_interaction` est écrite en UTC (utcnow) ; `date_creation` en heure
+    locale (now) — on renvoie donc le « now » assorti pour la comparaison.
+    """
+    iso = profile.get("last_interaction")
+    if iso:
+        try:
+            return datetime.fromisoformat(str(iso)), datetime.utcnow()
+        except (ValueError, TypeError):
+            pass
+    iso = (profile.get("meta", {}) or {}).get("date_creation")
+    if iso:
+        try:
+            return datetime.fromisoformat(str(iso)), datetime.now()
+        except (ValueError, TypeError):
+            pass
+    return None, datetime.utcnow()
+
+
+def _proactive_due(
+    profile: dict[str, Any], rcfg,
+) -> tuple[bool, bool]:
+    """(envoyer un message maintenant ?, pénalité de silence ?)."""
+    if profile.get("relationship_stage") == "rejet":
+        return False, False
+    ref, now = _last_user_activity(profile)
+    if ref is None:
+        return False, False
+    if (now - ref) < timedelta(hours=rcfg.proactive_after_hours):
+        return False, False
+    # Au plus un message spontané par intervalle (1/jour par défaut).
+    last_pro = profile.get("last_proactive_at")
+    if last_pro:
+        try:
+            last_pro_dt = datetime.fromisoformat(str(last_pro))
+            if (now - last_pro_dt) < timedelta(hours=rcfg.proactive_interval_hours):
+                return False, False
+        except (ValueError, TypeError):
+            pass
+    unanswered = int(profile.get("unanswered_messages", 0) or 0)
+    return True, unanswered >= 1
+
+
+async def _generate_proactive_message(
+    llm: LLMClient, profile: dict[str, Any], sid: str,
+    ref: datetime, now: datetime,
+) -> str:
+    """Message spontané via le LLM (incarnation pure, aucun outil)."""
+    hours = max(1, int((now - ref).total_seconds() // 3600))
+    unanswered = int(profile.get("unanswered_messages", 0) or 0)
+    name = profile.get("character", {}).get("name", "")
+    directive = (
+        f"[MESSAGE SPONTANÉ — Tu écris la première, {name}. L'utilisateur ne "
+        f"s'est pas manifesté depuis environ {hours} h. Écris UN seul message "
+        "de type texto (1 à 3 phrases courtes), fidèle à ta personnalité et "
+        "au stade de la relation. "
+    )
+    if unanswered > 0:
+        gradation = [
+            "étonnement et ennui léger (du genre « Allo ? », « Tu ne me "
+            "réponds pas ? », « Je m'ennuie. »)",
+            "inquiétude sincère (du genre « Tout va bien ? », « Tu ne veux "
+            "plus me parler ? »)",
+            "tristesse et sentiment d'être délaissé(e), blessé(e)",
+            "frustration visible — tu trouves ça irrespectueux",
+            "colère blessée et distance — tu penses sérieusement à arrêter "
+            "d'écrire",
+        ]
+        etat = gradation[min(unanswered, len(gradation)) - 1]
+        directive += (
+            f"IMPORTANT : c'est ton message numéro {unanswered + 1} consécutif "
+            f"resté SANS RÉPONSE. Ne répète pas un simple « hey ça fait "
+            f"longtemps ». Ton état émotionnel actuel : {etat}. Le message "
+            f"doit porter SUR ce silence (le manque de réponse), avec cette "
+            f"émotion. Reste fidèle à ta personnalité et à ta façon de "
+            f"parler, mais fais vraiment sentir cette gradation. "
+        )
+    directive += (
+        "Ne parle jamais au nom de l'utilisateur, ne mentionne aucun système, "
+        "aucun score ni aucun stade. Juste ton message.]"
+    )
+    system_text = app.state.prompt_builder.build_system_message(
+        profile, [], None, extra_directive=directive,
+    )
+    hist = [m for m in ChatHistory(sid).history
+            if m.role in ("user", "assistant")][-8:]
+    messages = [Message(role="system", content=system_text)] + list(hist)
+    result = await llm.chat(messages, temperature=0.9)
+    text = (result.content or "").strip()
+    return text[:600]
+
+
+def _fallback_proactive(profile: dict[str, Any]) -> str:
+    """Message de repli (LLM indisponible) — gradation selon le silence.
+
+    Premier message : ouverture naturelle par stade. Messages suivants
+    (le précédent est resté sans réponse) : étonnement → inquiétude →
+    tristesse → frustration → colère blessée.
+    """
+    unanswered = int(profile.get("unanswered_messages", 0) or 0)
+    if unanswered <= 0:
+        stage = profile.get("relationship_stage", "froid")
+        bank = PROACTIVE_FALLBACKS.get(stage) or PROACTIVE_FALLBACKS["froid"]
+        return random.choice(bank)
+    bank = PROACTIVE_ESCALATION[
+        min(unanswered, len(PROACTIVE_ESCALATION)) - 1
+    ]
+    return random.choice(bank)
+
+
+async def _proactive_for_session(sid: str) -> None:
+    """Vérifie UNE session et envoie un message spontané si dû."""
+    rcfg = cfg.relation
+    st = _state(sid)
+    hub = _hub(sid)
+    message: Optional[str] = None
+
+    async with hub.turn_lock:
+        profile = st.load()
+        if "_erreur" in profile:
+            return
+        due, penalty = _proactive_due(profile, rcfg)
+        if not due:
+            return
+
+        old_stage = profile.get("relationship_stage", "froid")
+        old_score = int(profile.get("relationship_score", rcfg.default_score))
+
+        # Pénalité : message précédent resté sans réponse.
+        if penalty:
+            st.set_score(
+                profile, old_score - rcfg.proactive_penalty,
+                mark_interaction=False,
+            )
+
+        # Génération du message (LLM si dispo, sinon fallback déterministe).
+        llm = getattr(app.state, "client", None)
+        ref, now = _last_user_activity(profile)
+        if llm is not None and ref is not None:
+            await _turn_begin()
+            try:
+                message = await _generate_proactive_message(
+                    llm, profile, sid, ref, now,
+                )
+            except Exception as e:                           # noqa: BLE001
+                _log.warning("[%s] message proactif LLM échoué : %s", sid, e)
+            finally:
+                await _turn_end()
+        if not message:
+            message = _fallback_proactive(profile)
+
+        hist = ChatHistory(sid)
+        hist.append("assistant", message)
+        profile["unanswered_messages"] = int(
+            profile.get("unanswered_messages", 0) or 0
+        ) + 1
+        profile["last_proactive_at"] = datetime.utcnow().isoformat()
+        st.save(profile)
+        _log.info("[%s] message proactif envoyé (sans réponse : %d)",
+                  sid, profile["unanswered_messages"])
+
+        # Notification temps réel si la session est ouverte quelque part.
+        await hub.broadcast({"type": "dm", "text": message})
+        if penalty:
+            await hub.broadcast({
+                "type": "profile",
+                "score": profile["relationship_score"],
+                "stage": profile["relationship_stage"],
+                "stage_changed": profile["relationship_stage"] != old_stage,
+                "delta": -rcfg.proactive_penalty,
+                "interaction_count": profile.get("interaction_count", 0),
+                "events_consumed": len(profile.get("event_history", []) or []),
+                "event_consumed_now": False,
+                "unanswered_messages": profile["unanswered_messages"],
+            })
+
+    # Photo d'initiative accompagnant parfois le message spontané.
+    if (
+        cfg.image.enabled
+        and cfg.image.initiative_enabled
+        and getattr(app.state, "image", None) is not None
+        and random.random() < cfg.image.initiative_chance_proactive
+    ):
+        await _maybe_initiative_photo(hub, sid)
+        return
+
+    # Sinon : décharge le modèle si plus aucun tour actif.
+    if await _turns_idle():
+        try:
+            await app.state.client.unload_model()
+        except Exception:
+            pass
+
+
+async def _proactive_loop() -> None:
+    """Boucle arrière-plan : vérifie toutes les sessions périodiquement."""
+    rcfg = cfg.relation
+    await asyncio.sleep(rcfg.proactive_first_delay_seconds)
+    while True:
+        try:
+            data_dir = cfg.abs(cfg.paths.data_dir)
+            for p in sorted(data_dir.glob("session_*.json")):
+                sid = p.stem[len("session_"):]
+                try:
+                    await _proactive_for_session(sid)
+                except Exception as e:                       # noqa: BLE001
+                    _log.warning("[%s] boucle proactive : %s", sid, e)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:                               # noqa: BLE001
+            _log.warning("boucle proactive : %s", e)
+        await asyncio.sleep(rcfg.proactive_check_seconds)
+
+
+# --------------------------------------------------------------------------- #
+#  Initiative photo — le personnage envoie de lui-même une photo pertinente.
+#  Décision 100 % serveur (probabilité par stade Neutre+), scène dérivée de
+#  la conversation par le « directeur photo », cadrage selfie par défaut.
+# --------------------------------------------------------------------------- #
+def _initiative_photo_due(profile: dict[str, Any]) -> bool:
+    icfg = cfg.image
+    if not (icfg.enabled and icfg.initiative_enabled):
+        return False
+    if getattr(app.state, "image", None) is None:
+        return False
+    if profile.get("relationship_stage") not in ("neutre", "chaleureux", "proche"):
+        return False
+    return random.random() < icfg.initiative_chance_turn
+
+
+async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
+    """Génère + diffuse une photo envoyée à l'initiative du personnage."""
+    image = getattr(app.state, "image", None)
+    st = _state(sid)
+    if image is None:
+        return
+    await _turn_begin()
+    try:
+        async with hub.turn_lock:
+            profile = st.load()
+            if "_erreur" in profile:
+                return
+            stage = profile.get("relationship_stage", "froid")
+            if stage not in ("neutre", "chaleureux", "proche"):
+                return
+            character = profile.get("character", {})
+            name = character.get("name", "")
+
+            await hub.broadcast({
+                "type": "tool_event",
+                "event": {
+                    "type": "image_pending",
+                    "msg": f"📸 {name} t'envoie une photo (génération en cours)…",
+                },
+            })
+            scene = await _scene_de_la_conversation(sid, character, stage, "")
+            prompt = img_helpers.photo_prompt_for_stage(character, stage, "", scene)
+            _log.info("[photo][initiative %s] prompt : %s", sid, prompt[:200])
+            dest_dir = st.photos_dir
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            fname = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            dest = dest_dir / fname
+
+            path = await img_helpers.generer_image(image, "photo", prompt, str(dest))
+            if path is None:
+                _log.warning("[photo][initiative %s] génération échouée", sid)
+                return
+
+            profile = st.load()
+            caption = img_helpers.caption_for("photo", stage, name)
+            st.add_photo(profile, fname, "photo", caption)
+            st.save(profile)
+            await hub.broadcast({
+                "type": "tool_event",
+                "event": {
+                    "type": "image_ready",
+                    "kind": "photo",
+                    "msg": f"📸 {name} vous envoie une photo !",
+                    "image": st.photo_url(fname),
+                    "caption": caption,
+                },
+            })
+    finally:
+        last = await _turn_end()
+        if last:
+            try:
+                await app.state.client.unload_model()
+            except Exception:
+                pass
+
+
+# --------------------------------------------------------------------------- #
 #  Tour de conversation — pipeline déterministe
 # --------------------------------------------------------------------------- #
 async def _extract_memories_if_due(
@@ -791,6 +1168,7 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
     await hub.broadcast({"type": "typing", "on": True})
 
     await _turn_begin()
+    initiative_photo = False
     try:
         async with hub.turn_lock:
             profile = st.load()
@@ -798,7 +1176,15 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 await hub.broadcast({"type": "dm", "text": "⚠️ Profil illisible."})
                 return
 
-            # 2. Décroissance temporelle si reprise après plusieurs jours.
+            # 2. L'utilisateur répond : les messages proactifs sans réponse
+            #    sont effacés (badge « ! » retiré, pénalité annulée).
+            #    Persisté immédiatement : un échec LLM plus loin ne doit
+            #    jamais faire revenir le badge.
+            if int(profile.get("unanswered_messages", 0) or 0) > 0:
+                profile["unanswered_messages"] = 0
+                st.save(profile)
+
+            # 3. Décroissance temporelle si reprise après plusieurs jours.
             now = datetime.utcnow()
             score = int(profile.get("relationship_score", rcfg.default_score))
             new_score, decayed = apply_time_decay(
@@ -860,6 +1246,11 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             )
             new_stage = profile["relationship_stage"]
 
+            # 7bis. Initiative photo : le personnage peut décider d'envoyer
+            #      lui-même une photo pertinente (décision serveur, stade
+            #      Neutre+). Génération différée après le tour de chat.
+            initiative_photo = _initiative_photo_due(profile)
+
             # 8. Consommation du scénario injecté — similarité cosinus entre
             #    le corps de l'event et la réponse (embeddings llamaembed),
             #    avec consommation forcée après event_max_attempts tours.
@@ -901,6 +1292,7 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 "interaction_count": profile.get("interaction_count", 0),
                 "events_consumed": len(profile.get("event_history", []) or []),
                 "event_consumed_now": consumed_now,
+                "unanswered_messages": 0,
             })
     except Exception as e:                                   # noqa: BLE001
         print(f"[amie] Tour échoué ({sid}) : {e}")
@@ -914,8 +1306,14 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
     await hub.broadcast({"type": "typing", "on": False})
     await hub.broadcast({"type": "status", "description": "", "done": True})
 
-    # 11. Décharge le modèle de la VRAM si plus aucun tour actif
-    #     (libère la place pour ComfyUI — même chorégraphie que le projet D&D).
+    # 11. Photo d'initiative (décidée pendant le tour) — après la réponse,
+    #     pour ne pas retarder la bulle de chat.
+    if initiative_photo:
+        await _maybe_initiative_photo(hub, sid)
+        return
+
+    # 12. Décharge le modèle de la VRAM si plus aucun tour actif
+    #     (libère la place pour ComfyUI).
     if last_turn:
         try:
             await app.state.client.unload_model()
@@ -931,7 +1329,6 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
     await ws.accept()
     hub = _hub(sid)
     authenticated = False
-    user = ""
 
     # Vérifie d'emblée que la session existe (sans rien révéler sinon).
     st = _state(sid)
@@ -957,15 +1354,15 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
             mtype = msg.get("type")
 
             if mtype == "join":
-                user = (msg.get("user") or "").strip()
-                password = msg.get("password") or ""
-                if not user or not _verify_user(user, password):
+                token = msg.get("token") or ""
+                user_nom = auth_mod.verifier_token(_data_dir(), token)
+                if not user_nom:
                     await ws.send_json({
                         "type": "sys", "event": "auth_failed",
-                        "detail": "Nom ou mot de passe incorrect.",
+                        "detail": "Session expirée ou invalide — reconnecte-toi.",
                     })
                     continue
-                if (profile.get("meta", {}) or {}).get("user", "") != user.lower():
+                if (profile.get("meta", {}) or {}).get("user", "") != user_nom.lower():
                     await ws.send_json({
                         "type": "sys", "event": "auth_failed",
                         "detail": "Cette session n'appartient pas à cet utilisateur.",
@@ -1018,9 +1415,9 @@ _static = Path(__file__).resolve().parent / "static"
 if _static.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
-_data_dir = cfg.abs(cfg.paths.data_dir)
-if _data_dir.is_dir():
-    app.mount("/data", StaticFiles(directory=str(_data_dir)), name="data")
+_data_mount_dir = cfg.abs(cfg.paths.data_dir)
+if _data_mount_dir.is_dir():
+    app.mount("/data", StaticFiles(directory=str(_data_mount_dir)), name="data")
 
 
 @app.get("/")

@@ -1,6 +1,6 @@
 """Profil relationnel persistant d'une session — `data/session_<id>.json`.
 
-Équivalent du `PartyState` du projet D&D : écritures atomiques
+Écritures atomiques
 (tempfile + os.replace), schéma par défaut, helpers de mise à jour.
 Chaque session appartient à un utilisateur (meta.user) et porte :
 - le personnage (preset ou custom),
@@ -42,6 +42,10 @@ SCHEMA_SESSION: dict[str, Any] = {
     "last_injected_event_id": None,
     "memories": [],          # [{fact, embedding, ts}]
     "photos": [],            # [{file, kind, caption, ts}]
+    # Messages proactifs du personnage sans réponse de l'utilisateur
+    # (badge « ! » dans « Mes rencontres », pénalité de relation).
+    "unanswered_messages": 0,
+    "last_proactive_at": None,   # ISO UTC du dernier message spontané envoyé
 }
 
 

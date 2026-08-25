@@ -24,6 +24,8 @@ memory:
   embedding_base_url: http://127.0.0.1:9/v1
 image:
   enabled: false
+relation:
+  proactive_enabled: false
 paths:
   data_dir: {_DATA_DIR.as_posix()}
 """,

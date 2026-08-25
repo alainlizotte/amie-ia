@@ -1,12 +1,6 @@
 # docker-compose.yml — Ami(e) IA (compagnon virtuel, serveur dédié)
 #
-# PRÉREQUIS : les conteneurs `llamacpp` (chat, port interne 8080) et
-# `llamaembed` (embeddings, port interne 8080) doivent déjà tourner sur le
-# réseau `openwebui-net`. Ils sont démarrés par le docker-compose du projet
-# « d&d app - copie » :
-#     cd "../d&d app - copie" && docker compose up -d llamacpp llamaembed
-#
-# Démarrage :
+# Démarrage (tout est inclus : serveur web, llama.cpp chat, embeddings) :
 #   docker compose up -d --build
 #
 # Port : l'hôte écoute sur 8124 (conteneur interne 8000). Pour changer :
@@ -32,14 +26,91 @@ services:
     volumes:
       # Configuration (écrasée par l'utilisateur, pas dans l'image).
       - ./config:/app/config:ro
-      # Données runtime (sessions, historiques, photos, users.json).
+      # Données runtime (sessions, historiques, photos, utilisateurs.json).
       - ./server/data:/app/server/data
-      # Personnages prédéfinis + scénarios (portés du projet OpenWebUI).
+      # Personnages prédéfinis + scénarios.
       - ./data/character_presets:/app/data/character_presets:ro
     restart: unless-stopped
+    depends_on:
+      llamacpp:
+        condition: service_healthy
+      llamaembed:
+        condition: service_healthy
     networks:
-      - openwebui-net
+      - amie-net
+
+  # ── llama.cpp : serveur de chat (GPU NVIDIA) ──────────────────────────
+  # Prérequis :
+  #   1. Placer le modèle GGUF de chat dans ./models/
+  #   2. Docker Desktop avec support GPU NVIDIA (WSL2)
+  #
+  # Sans GPU NVIDIA : remplacer l'image `server-cuda` par `server` et
+  # retirer la section deploy.resources (inférence CPU, plus lente).
+  #
+  # Flags :
+  #   -ngl all           : toutes les couches sur GPU
+  #   -c 32768           : taille du contexte
+  #   -ctk q8_0 -ctv q8_0 : KV cache K/V en 8-bit
+  #   --jinja            : template Jinja natif Gemma
+  #   --flash-attn on    : Flash Attention (réduit VRAM KV cache)
+  #   --sleep-idle-seconds 300 : unload après 5 min d'inactivité
+  llamacpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: amie-llamacpp
+    ports:
+      # Publié pour le développement local ; surcharger avec LLAMACPP_PORT
+      # si ce port est déjà pris sur votre machine.
+      - "${LLAMACPP_PORT:-8080}:8080"
+    volumes:
+      - ./models:/models
+    command: >
+      --host 0.0.0.0
+      --port 8080
+      --models-dir /models
+      --models-max 1
+      -ngl 32
+      -c 32768
+      -ctk q8_0
+      -ctv q8_0
+      --jinja
+      --flash-attn on
+      --sleep-idle-seconds 300
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - amie-net
+
+  # ── llama.cpp : serveur d'embeddings (mémoire sémantique) ─────────────
+  # Conteneur CPU dédié aux embeddings (modèle embeddinggemma-300M QAT Q4_0,
+  # ~265 Mo, à placer dans ./models-embed/). Ne consomme AUCUNE VRAM.
+  llamaembed:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: amie-llamaembed
+    ports:
+      # Port interne 8080 (exigé par le HEALTHCHECK de l'image), publié en
+      # 8081 côte hôte ; surcharger avec LLAMAEMBED_PORT si besoin.
+      - "${LLAMAEMBED_PORT:-8081}:8080"
+    volumes:
+      - ./models-embed:/models
+    command: >
+      -m /models/embeddinggemma-300M-qat-Q4_0.gguf
+      --host 0.0.0.0
+      --port 8080
+      --embedding
+      -c 4096
+      -np 1
+      -b 4096
+      -ub 4096
+      --alias embeddinggemma
+    restart: unless-stopped
+    networks:
+      - amie-net
 
 networks:
-  openwebui-net:
-    external: true
+  amie-net:

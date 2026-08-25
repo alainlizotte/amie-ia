@@ -1,6 +1,6 @@
 // Client WebSocket — une seule connexion persistante par session de rencontre.
-// Reconnexion automatique avec backoff exponentiel (1s → 5s plafonné),
-// comme le projet D&D. Le join porte nom + mot de passe (auth serveur).
+// Reconnexion automatique avec backoff exponentiel (1s → 5s plafonné).
+// Le join porte le token Bearer (auth serveur).
 //
 // Important : les messages envoyés pendant que le socket n'est pas encore
 // OPEN (état CONNECTING après new WebSocket) sont mis en file et expédiés
@@ -19,7 +19,7 @@ export class ChatSocket {
   private manualClose = false;
   private openedOnce = false;
   private queue: WsOutMessage[] = [];
-  private lastJoin: { user: string; password: string } | null = null;
+  private lastJoin: { token: string } | null = null;
 
   constructor(sessionId: string) {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -83,9 +83,9 @@ export class ChatSocket {
     }
   }
 
-  join(user: string, password: string): void {
-    this.lastJoin = { user, password };
-    this.send({ type: "join", user, password });
+  join(token: string): void {
+    this.lastJoin = { token };
+    this.send({ type: "join", token });
   }
 
   say(text: string): void {

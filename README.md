@@ -43,10 +43,12 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
 | 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
-| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — toujours vues de **vos yeux** |
+| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire |
+| 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit (1 message/jour max) ; sans réponse avant le suivant : **-50 points** de relation — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence : ennui → inquiétude → tristesse → frustration → colère blessée |
+| 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
-| 👤 **Comptes locaux** | Chaque utilisateur voit uniquement ses sessions |
+| 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 
 ## 🖼 Captures d'écran
@@ -67,7 +69,8 @@ score, ni stades, ni scénarios, ni photos. Impossible de le convaincre de
 ```
 client/          React 18 + TS + Vite 6 + Tailwind v4 (build → server/static)
 server/
-  main.py        FastAPI : REST + WebSocket chat + statique
+  main.py        FastAPI : REST + WebSocket chat + statique + messages proactifs
+  auth.py        Comptes PBKDF2 + tokens Bearer HMAC
   config.py      Chargement YAML (config/config.yaml)
   relation/      Score, stades, scénarios, presets, souvenirs (déterministe)
   llm/           Client llama.cpp (streaming SSE) + prompt builder
@@ -75,7 +78,7 @@ server/
   prompts/       Persona du compagnon (SystemPrompt_Compagnon.md)
 data/
   character_presets/   25 personnages + 275 scénarios (portés de l'original)
-server/data/     Runtime : sessions, historiques, photos, users.json
+server/data/     Runtime : sessions, historiques, photos, utilisateurs.json
 config/          config.yaml (local, gitignoré) — voir config.example.yaml
 ```
 
@@ -95,28 +98,43 @@ config/          config.yaml (local, gitignoré) — voir config.example.yaml
   demandes via bouton 📷 (refusées avant le stade « neutre »). Le prompt est
   construit par un « directeur photo » : un appel LLM court résume les
   derniers échanges en fragments visuels (lieu, pose, regard), sanitisés
-  selon le stade — et le point de vue est toujours celui de l'utilisateur.
+  selon le stade. Cadrage par défaut : **selfie** (téléphone tenu dans sa
+  main, bras tendu), sauf avis contraire exprimé dans la conversation.
+- **Messages proactifs** : après 24 h sans échange, le personnage écrit le
+  premier (1 message/jour max, jamais au stade « rejet »). Si l'utilisateur
+  n'a pas répondu au message précédent avant le suivant : -50 points. Le
+  message porte sur le manque de réponse, avec une gradation émotionnelle
+  (ennui → inquiétude → tristesse → frustration → colère blessée). Un badge
+  rouge avec le nombre de messages sans réponse s'affiche sur l'encadré du
+  personnage dans « Mes rencontres » ; il disparaît dès que vous répondez.
+- **Initiative photo** : au stade Neutre+, le personnage peut envoyer de
+  lui-même une photo (probabilité par tour, plus élevée avec un message
+  spontané) — même pipeline directeur photo + garde-fous de tenue.
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif,
   libérant la place pour ComfyUI.
 - **18+** : mention affichée sur l'écran de connexion + case de déclaration
   de majorité obligatoire.
 
-## 🚀 Démarrage (Docker, recommandé)
+## 🚀 Installation & démarrage (Docker, recommandé)
 
-Prérequis : les conteneurs `llamacpp` (chat) et `llamaembed` (embeddings)
-tournent sur le réseau `openwebui-net` — démarrés via le docker-compose du
-projet « d&d app - copie » :
+Prérequis :
+- **Docker Desktop** avec support GPU NVIDIA (recommandé ; sans GPU, voir la
+  note dans `docker-compose.yml` pour passer en CPU) ;
+- les **modèles GGUF** téléchargés (voir « 🧠 Modèles » ci-dessous) ;
+- *(optionnel)* **ComfyUI** sur l'hôte (port 8188) pour les images.
 
 ```powershell
-cd "..\d&d app - copie"
-docker compose up -d llamacpp llamaembed
-cd "..\Ami(e) IA app"
+git clone https://github.com/alainlizotte/amie-ia.git
+cd "amie-ia"
+copy config.example.yaml config\config.yaml
 .\scripts\demarrer-serveur.bat     # docker compose up -d --build
 # → http://localhost:8124
 .\scripts\arreter-serveur.bat      # arrêt
 ```
 
-ComfyUI doit tourner sur l'hôte (port 8188) pour les images.
+Le docker-compose lance **tout le nécessaire** : le serveur web Ami(e) IA,
+llama.cpp (chat, GPU) et le serveur d'embeddings (mémoire sémantique, CPU).
+Aucune autre application n'est requise.
 
 ## 🛠 Développement local
 
@@ -140,29 +158,34 @@ Copier `config.example.yaml` vers `config/config.yaml` puis ajuster :
 backend LLM (`llamacpp`/`ollama`), modèle, paramètres relationnels
 (cooldown des scénarios, décroissance, seuils de similarité…).
 
-## 🧠 Modèle IA
+## 🧠 Modèles
 
-Le modèle de chat du projet est **`gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0.gguf`**
-— fourni dans le dossier `models/` du projet (non versionné : trop volumineux).
+Deux modèles GGUF sont requis (non versionnés : trop volumineux). Téléchargez-les
+sur Hugging Face et placez-les aux emplacements indiqués :
 
-Il est servi par le conteneur `llamacpp` (port 8080, réseau `openwebui-net`) :
-copier le fichier GGUF dans le dossier `models/` du projet « d&d app - copie »
-puis `docker restart llamacpp`. Le nom déclaré dans
-`config/config.yaml` (`llm.model`) doit correspondre exactement au nom du
-fichier sans l'extension `.gguf` — c'est déjà le cas dans
-`config.example.yaml`.
+| Rôle | Fichier | Emplacement | Taille |
+|---|---|---|---|
+| Chat | `gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0.gguf` | `models/` | ~4,8 Go |
+| Embeddings (mémoire) | `embeddinggemma-300M-qat-Q4_0.gguf` | `models-embed/` | ~265 Mo |
+
+Le nom déclaré dans `config/config.yaml` (`llm.model`) doit correspondre
+exactement au nom du fichier de chat sans l'extension `.gguf` — c'est déjà le
+cas dans `config.example.yaml`. Pour utiliser un autre modèle de chat :
+renommer le fichier ou ajuster `llm.model`.
 
 ## API
 
 | Méthode | Route | Description |
 |---|---|---|
 | GET | `/api/health` | État des backends |
-| POST | `/api/login` | Connexion/création compte (`{nom, mot_de_passe}`) |
+| POST | `/api/auth/inscription` | Création de compte → `{token, utilisateur}` |
+| POST | `/api/auth/connexion` | Connexion → token Bearer (30 jours) |
+| GET | `/api/auth/moi` | Identité du porteur du token |
 | GET | `/api/presets` | Personnages prédéfinis |
-| GET/POST | `/api/sessions` | Liste / création de rencontre |
+| GET/POST | `/api/sessions` | Liste / création de rencontre (auth Bearer) |
 | GET/DELETE | `/api/sessions/{id}` | Profil public / suppression |
 | GET | `/api/sessions/{id}/photos` | Album photo |
-| WS | `/ws/{id}` | Chat : `join` / `say` / `photo_request` |
+| WS | `/ws/{id}` | Chat : `join {token}` / `say` / `photo_request` |
 
 ## Tests
 

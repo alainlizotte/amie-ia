@@ -1,4 +1,6 @@
 // Page « Mes rencontres » — liste des sessions de l'utilisateur + création.
+// Badge rouge « !n » sur l'encadré d'un personnage : nombre de messages
+// spontanés envoyés sans réponse (disparaît dès que vous lui répondez).
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +11,6 @@ import { CharacterPicker } from "../components/CharacterPicker";
 import { useAmie } from "../store";
 
 export function SessionsPage() {
-  const user = useAmie((s) => s.user);
   const setSessionId = useAmie((s) => s.setSessionId);
   const reset = useAmie((s) => s.reset);
   const navigate = useNavigate();
@@ -17,14 +18,14 @@ export function SessionsPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["sessions", user],
-    queryFn: () => apiSessions(user),
+    queryKey: ["sessions"],
+    queryFn: apiSessions,
     refetchInterval: 5000, // rafraîchit pendant la génération des portraits
   });
 
   const del = useMutation({
-    mutationFn: (sid: string) => apiDeleteSession(sid, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sessions", user] }),
+    mutationFn: (sid: string) => apiDeleteSession(sid),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
   });
 
   function openSession(sid: string) {
@@ -72,8 +73,17 @@ export function SessionsPage() {
           {data!.sessions.map((s) => (
             <li
               key={s.session_id}
-              className="flex items-center gap-4 rounded-xl border border-rose-900/40 bg-[#24101c]/80 p-4 transition hover:border-rose-500/50"
+              className="relative flex items-center gap-4 rounded-xl border border-rose-900/40 bg-[#24101c]/80 p-4 transition hover:border-rose-500/50"
             >
+              {/* Badge messages sans réponse : compteur dans un cercle rouge */}
+              {s.unanswered_messages > 0 && (
+                <span
+                  title={`${s.unanswered_messages} message(s) de ${s.character.name} sans réponse`}
+                  className="absolute -right-2 -top-2 z-10 flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-[#24101c] bg-red-600 px-1.5 text-sm font-bold text-white shadow-lg shadow-red-950/50"
+                >
+                  {s.unanswered_messages}
+                </span>
+              )}
               <button onClick={() => openSession(s.session_id)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
                 {s.portrait_url ? (
                   <img

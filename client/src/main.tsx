@@ -1,4 +1,5 @@
 // Entrée React — router + QueryClient + Tailwind import. Root mount #root.
+// Auth par token Bearer : un 401 côté REST déconnecte proprement et ramène à /login.
 
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -9,6 +10,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { SessionPage } from "./pages/SessionPage";
 import { AlbumPage } from "./pages/AlbumPage";
+import { onNonAuthentifie, setToken } from "./api/rest";
 import { useAmie } from "./store";
 
 import "./index.css";
@@ -17,10 +19,19 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
 
-/** Garde : redirige vers /login si aucun compte en session navigateur. */
+// 401 quelque part (token expiré) → déconnexion forcée + retour au login.
+onNonAuthentifie(() => {
+  setToken("");
+  useAmie.getState().setUser("");
+  useAmie.getState().reset();
+  window.location.assign("/login");
+});
+
+/** Garde : redirige vers /login si aucun token mémorisé. */
 function RequireUser({ children }: { children: React.ReactNode }) {
   const user = useAmie((s) => s.user);
-  if (!user) return <Navigate to="/login" replace />;
+  const token = useAmie((s) => s.token);
+  if (!user || !token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

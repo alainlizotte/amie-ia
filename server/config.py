@@ -1,6 +1,6 @@
 """Charge et valide la configuration YAML de l'application Ami(e) IA.
 
-Même architecture que le projet D&D 3.5 : dataclasses hydratées depuis
+Dataclasses hydratées depuis
 `config/config.yaml`, valeurs par défaut sûres, clés inconnues ignorées.
 """
 
@@ -58,6 +58,13 @@ class RelationConfig:
     decay_max_loss: int = 150         # perte maximale cumulée par décroissance
     summarize_every_turns: int = 10   # fréquence d'extraction de souvenirs
     max_memories: int = 40            # nombre max de souvenirs stockés (FIFO)
+    # Messages proactifs du personnage (il écrit le premier après un silence)
+    proactive_enabled: bool = True
+    proactive_after_hours: float = 24.0   # silence requis avant initiative
+    proactive_interval_hours: float = 24.0  # délai min entre deux initiatives (1/jour)
+    proactive_penalty: int = 50         # pénalité si nouveau message sans réponse au précédent
+    proactive_check_seconds: int = 300  # période de la boucle de vérification
+    proactive_first_delay_seconds: int = 30  # délai avant la première vérification
 
 
 @dataclass
@@ -75,6 +82,10 @@ class ImageConfig:
     enabled: bool = True
     base_url: str = ""                # vide → env COMFYUI_BASE_URL → défaut local
     timeout_total: int = 300
+    # Initiative du personnage : il envoie de lui-même des photos pertinentes
+    initiative_enabled: bool = True
+    initiative_chance_turn: float = 0.10       # proba par tour de conversation
+    initiative_chance_proactive: float = 0.30  # proba avec un message spontané
 
 
 @dataclass

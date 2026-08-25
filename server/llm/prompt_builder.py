@@ -180,8 +180,13 @@ class PromptBuilder:
         profile: dict[str, Any],
         memories: list[str],
         pending_event: Optional[dict[str, Any]],
+        extra_directive: str = "",
     ) -> str:
-        """Assemble le message système complet du tour."""
+        """Assemble le message système complet du tour.
+
+        `extra_directive` : consigne supplémentaire placée en tête (utilisée
+        pour les messages spontanés du personnage — voir main.py).
+        """
         parts = [
             self.persona_prompt(),
             self.build_character_card(profile),
@@ -190,6 +195,8 @@ class PromptBuilder:
             self.AUTOMATISATIONS_NOTE,
             self.build_time_block(),
         ]
+        if extra_directive.strip():
+            parts.insert(0, extra_directive.strip())
         mem_block = self.build_memories_block(memories)
         if mem_block:
             parts.append(mem_block)

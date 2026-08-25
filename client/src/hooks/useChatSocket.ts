@@ -14,8 +14,7 @@ export function useChatSocket(sid: string | undefined) {
     socketRef.current = socket;
 
     const {
-      user,
-      password,
+      token,
       setJoined,
       setAuthError,
       setProfile,
@@ -109,6 +108,7 @@ export function useChatSocket(sid: string | undefined) {
             stage: msg.stage,
             interaction_count: msg.interaction_count,
             events_consumed: msg.events_consumed,
+            unanswered_messages: msg.unanswered_messages,
           });
           if (msg.stage_changed) {
             addMessage({
@@ -123,7 +123,7 @@ export function useChatSocket(sid: string | undefined) {
 
     socket.connect();
     // Auth dès l'ouverture ; en cas d'échec, le serveur répond auth_failed.
-    socket.join(user, password);
+    socket.join(token);
 
     return () => {
       socket.close();

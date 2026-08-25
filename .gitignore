@@ -24,6 +24,7 @@ server/data/photos/
 .DS_Store
 Thumbs.db
 
-# Modeles LLM locaux (trop volumineux � servis par llamacpp)
+# Modèles LLM locaux (trop volumineux — servis par llamacpp)
 models/
+models-embed/
 server/data/

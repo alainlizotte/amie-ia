@@ -1,4 +1,5 @@
-# Tests des prompts photo — scène dérivée de la conversation, POV, garde-fous.
+# Tests des prompts photo — scène dérivée de la conversation, cadrage
+# selfie par défaut, garde-fous de tenue.
 
 import sys
 from pathlib import Path
@@ -8,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from server.image.helpers import (  # noqa: E402
     director_system,
     photo_prompt_for_stage,
-    pov_clause,
     sanitize_scene,
+    selfie_clause,
 )
 
 _CHAR = {
@@ -21,28 +22,53 @@ _CHAR = {
 }
 
 
-class TestPov:
-    def test_cadrage_pov_toujours_present(self):
+class TestSelfie:
+    def test_cadrage_selfie_par_defaut(self):
         p = photo_prompt_for_stage(_CHAR, "neutre")
-        assert "point of view" in p
-        assert "taken from the eyes" in p
+        assert "selfie" in p
+        assert "phone held in her own hand" in p
+        assert "arm's length" in p
 
-    def test_regard_non_impose(self):
-        # Le regard dépend de la scène : plus de "looks directly at you".
-        p = photo_prompt_for_stage(_CHAR, "neutre")
-        assert "looks directly at you" not in p
-        assert "directly at you" not in pov_clause(_CHAR)
-
-    def test_pov_clause_masculin(self):
+    def test_selfie_clause_masculine(self):
         c = dict(_CHAR, gender="M")
-        assert "eyes of the person he is talking to" in pov_clause(c)
+        s = selfie_clause(c)
+        assert "himself" in s
+        assert "his own hand" in s
 
-    def test_scene_inserree_dans_le_prompt(self):
+    def test_scene_sans_cadrage_selfie_ajoute(self):
         p = photo_prompt_for_stage(
             _CHAR, "neutre", scene="sitting at the dinner table, candlelight",
         )
         assert "sitting at the dinner table" in p
+        assert "selfie" in p  # selfie par défaut même avec scène
 
+    def test_avis_contraire_dans_la_scene_selfie_retire(self):
+        # La scène réclame explicitement un autre cadrage → pas de selfie.
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
+            scene="sitting at the piano, photo taken by her sister",
+        )
+        assert "selfie" not in p
+        assert "taken by her sister" in p
+
+    def test_avis_contraire_dans_le_hint_selfie_retire(self):
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
+            user_hint="photo en miroir dans le salon",
+            scene="standing in the living room",
+        )
+        assert "selfie" not in p
+        assert "standing in the living room" in p
+
+    def test_hint_selfie_explicite_pas_de_doublon(self):
+        # Si la scène dit déjà « selfie », la clause n'est pas réinjectée.
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre", scene="gym selfie after workout, smiling",
+        )
+        assert p.count("selfie") == 1
+
+
+class TestScene:
     def test_scene_presente_fiche_non_reinjectee(self):
         # Avec une scène, la fiche (style quotidien, intérêts) ne doit PAS
         # coexister avec elle : source de directives contradictoires.
@@ -54,12 +80,6 @@ class TestPov:
         assert "vintage shopping" not in p       # intérêts de la fiche
         assert "au café" not in p                # hint déjà passé au directeur
         assert "wearing a red dress" in p        # la scène fait foi
-
-    def test_scene_seule_avec_tenue_et_pov(self):
-        p = photo_prompt_for_stage(_CHAR, "proche", scene="completely nude")
-        assert "completely nude" in p
-        assert "unrestricted" in p
-        assert "point of view" in p
 
 
 class TestGardeFousTenue:
@@ -113,6 +133,11 @@ class TestDirecteurPhoto:
 
     def test_consigne_utilise_le_pronom(self):
         assert "her pose" in director_system(_CHAR, "neutre")
+
+    def test_consigne_selfie_par_defaut(self):
+        c = director_system(_CHAR, "neutre")
+        assert "DEFAULT CAMERA FRAMING" in c
+        assert "selfie" in c.lower()
 
     def test_fiche_apparence_transmise_au_directeur(self):
         # Le directeur reçoit l'apparence fixe : il décrit l'ensemble,

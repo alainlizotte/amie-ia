@@ -61,6 +61,11 @@ def _possessive(character: dict[str, Any]) -> str:
     return "her" if g == "F" else "his" if g == "M" else "their"
 
 
+def _reflexive(character: dict[str, Any]) -> str:
+    g = (character.get("gender") or "F").upper()[:1]
+    return "herself" if g == "F" else "himself" if g == "M" else "themself"
+
+
 def _base_description(character: dict[str, Any]) -> str:
     parts: list[str] = []
     name = character.get("name", "")
@@ -89,16 +94,36 @@ def portrait_prompt(character: dict[str, Any]) -> str:
     )
 
 
-def pov_clause(character: dict[str, Any]) -> str:
-    """Cadrage constant : la photo est vue des YEUX de l'utilisateur.
-    Le REGARD du personnage n'est pas imposé — il dépend de la scène
-    (décrit par le directeur photo : contact visuel, regard fuyant,
-    concentré sur une activité…)."""
+def selfie_clause(character: dict[str, Any]) -> str:
+    """Cadrage par défaut : la photo est un SELFIE pris par le personnage
+    lui-même — appareil photo (téléphone) tenu dans sa main, bras tendu.
+    Remplace l'ancien cadrage « vue des yeux de l'utilisateur »."""
     p = _pronoun(character)
+    poss = _possessive(character)
+    refl = _reflexive(character)
     return (
-        f"point of view photograph taken from the eyes of the person "
-        f"{p} is talking to"
+        f"casual selfie taken by {refl}, phone held in {poss} own hand "
+        f"at arm's length, slightly high angle, {poss} extended arm "
+        "visible at the edge of the frame, natural amateur selfie "
+        "composition, mild lens distortion"
     )
+
+
+# Mots-clés signalant qu'un cadrage alternatif est explicitement demandé
+# (dans la scène du directeur photo ou le hint utilisateur) — dans ce cas,
+# le selfie par défaut n'est PAS imposé (« sauf avis contraire »).
+_FRAMING_HINT_RE = re.compile(
+    r"\b(selfie|mirror|miroir|point of view|pov|taken by|held by|"
+    r"photographer|someone else|stranger|passer-?by|tripod|"
+    r"holding the camera|photobooth|prise par|prise de vue|"
+    r"photographe|quelqu.un d.autre|appareil sur pied)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_alt_framing(*fragments: str) -> bool:
+    """True si un fragment (scène, hint) réclame explicitement un autre cadrage."""
+    return any(_FRAMING_HINT_RE.search(f or "") for f in fragments)
 
 
 def outfit_clause(stage: str) -> str:
@@ -136,12 +161,19 @@ def photo_prompt_for_stage(
     nue ou autrement habillée, et noierait le modèle d'image sous des
     directives contradictoires). La clause de tenue du stade reste
     systématiquement ajoutée en garde-fou.
+
+    Cadrage par défaut : SELFIE (téléphone tenu dans sa main, bras tendu)
+    — imposé sauf si la scène ou le hint utilisateur réclame explicitement
+    un autre cadrage (« sauf avis contraire »).
     """
     scene_clean = (scene or "").strip(" ,.")
     if scene_clean:
+        framing = (
+            "" if _wants_alt_framing(scene_clean, user_hint)
+            else f"{selfie_clause(character)}, "
+        )
         return (
-            f"photograph of {scene_clean}, {outfit_clause(stage)}, "
-            f"{pov_clause(character)}, "
+            f"photograph of {scene_clean}, {framing}{outfit_clause(stage)}, "
             "photorealistic, natural lighting, warm colors, "
             "romantic dating profile photo style, high resolution, no text"
         )
@@ -149,9 +181,12 @@ def photo_prompt_for_stage(
     # Fallback déterministe (directeur indisponible) : fiche du personnage.
     desc = _base_description(character)
     hint = f", {user_hint.strip()}" if user_hint and user_hint.strip() else ""
+    framing = (
+        "" if _wants_alt_framing(user_hint)
+        else f"{selfie_clause(character)}, "
+    )
     return (
-        f"photograph of {desc}{hint}, {outfit_clause(stage)}, "
-        f"{pov_clause(character)}, "
+        f"photograph of {desc}{hint}, {framing}{outfit_clause(stage)}, "
         "photorealistic, natural lighting, warm colors, "
         "romantic dating profile photo style, high resolution, no text"
     )
@@ -220,6 +255,10 @@ def director_system(character: dict[str, Any], stage: str,
         f"Her gaze depends on the scene: eye contact with the viewer only "
         f"when it feels natural (she may look away, look down, or be "
         f"absorbed in an activity).",
+        "DEFAULT CAMERA FRAMING: a selfie taken with her own phone held "
+        "in her hand, arm extended — describe a different framing ONLY if "
+        "the scene clearly calls for it (e.g. someone else takes the "
+        "photo, mirror shot, tripod).",
         "If the user made a specific request in the conversation and "
         f"{name} accepted it, agreed to it or is doing it, that request "
         "has TOP PRIORITY — describe exactly what was asked.",
