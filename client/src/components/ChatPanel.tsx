@@ -7,6 +7,7 @@ import type { ChatMessage } from "../api/types";
 export function ChatPanel({
   messages,
   typing,
+  busy,
   status,
   characterName,
   canRequestPhoto,
@@ -15,6 +16,7 @@ export function ChatPanel({
 }: {
   messages: ChatMessage[];
   typing: boolean;
+  busy: boolean;
   status: string;
   characterName: string;
   canRequestPhoto: boolean;
@@ -23,6 +25,7 @@ export function ChatPanel({
 }) {
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  const isDisabled = typing || busy;
 
   // Défilement du fil uniquement — jamais de scrollIntoView, qui remonterait
   // aussi les ancêtres (fenêtre comprise) et décalerait toute l'app.
@@ -33,7 +36,7 @@ export function ChatPanel({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const t = text.trim();
-    if (!t) return;
+    if (!t || isDisabled) return;
     onSend(t);
     setText("");
   }
@@ -74,7 +77,7 @@ export function ChatPanel({
         <button
           type="button"
           onClick={requestPhoto}
-          disabled={!canRequestPhoto || typing}
+          disabled={!canRequestPhoto || isDisabled}
           title={
             canRequestPhoto
               ? "Demander une photo — écris ta demande dans le champ pour la préciser (ex : « assise à table face à moi »)"
@@ -87,12 +90,13 @@ export function ChatPanel({
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`Écrire à ${characterName}…`}
-          className="min-w-0 flex-1 rounded-full border border-rose-900/50 bg-[#1a0b14] px-4 py-2.5 text-sm text-rose-50 outline-none transition focus:border-rose-500"
+          placeholder={isDisabled ? "L'IA réfléchit…" : `Écrire à ${characterName}…`}
+          disabled={isDisabled}
+          className="min-w-0 flex-1 rounded-full border border-rose-900/50 bg-[#1a0b14] px-4 py-2.5 text-sm text-rose-50 outline-none transition focus:border-rose-500 disabled:opacity-40"
         />
         <button
           type="submit"
-          disabled={!text.trim()}
+          disabled={!text.trim() || isDisabled}
           className="shrink-0 rounded-full bg-gradient-to-r from-rose-500 to-fuchsia-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
         >
           Envoyer

@@ -48,8 +48,10 @@ interface AmieStore {
   // -- Fil de discussion --------------------------------------------------- //
   messages: ChatMessage[];
   typing: boolean;
+  busy: boolean;
   status: string;
   setTyping: (v: boolean) => void;
+  setBusy: (v: boolean) => void;
   setStatus: (s: string) => void;
 
   addMessage: (m: ChatMessage) => void;
@@ -101,8 +103,10 @@ export const useAmie = create<AmieStore>((set) => ({
 
   messages: [],
   typing: false,
+  busy: false,
   status: "",
   setTyping: (v) => set({ typing: v }),
+  setBusy: (v) => set({ busy: v }),
   setStatus: (s) => set({ status: s }),
 
   addMessage: (m) => set((st) => ({ messages: [...st.messages, m] })),
@@ -141,6 +145,7 @@ export const useAmie = create<AmieStore>((set) => ({
       profile: null,
       messages: [],
       typing: false,
+      busy: false,
       status: "",
     }),
 }));

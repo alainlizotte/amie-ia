@@ -75,7 +75,7 @@ export type WsOutMessage =
 /** Messages entrants (serveur → client). */
 export type WsInMessage =
   | { type: "sys"; event: "joined"; history: { role: string; content: string }[]; profile: PublicProfile }
-  | { type: "sys"; event: "auth_failed" | "auth_required" | "error"; detail?: string }
+  | { type: "sys"; event: "auth_failed" | "auth_required" | "error" | "busy"; detail?: string }
   | { type: "player"; text: string }
   | { type: "status"; description: string; done?: boolean }
   | { type: "typing"; on: boolean }

@@ -19,6 +19,7 @@ export function SessionPage() {
   const profile = useAmie((s) => s.profile);
   const messages = useAmie((s) => s.messages);
   const typing = useAmie((s) => s.typing);
+  const busy = useAmie((s) => s.busy);
   const status = useAmie((s) => s.status);
   const joined = useAmie((s) => s.joined);
   const authError = useAmie((s) => s.authError);
@@ -73,10 +74,14 @@ export function SessionPage() {
         <ChatPanel
           messages={messages}
           typing={typing}
+          busy={busy}
           status={status}
           characterName={profile.character.name}
           canRequestPhoto={canPhoto}
-          onSend={(text) => socketRef.current?.say(text)}
+          onSend={(text) => {
+            useAmie.getState().setBusy(true);
+            socketRef.current?.say(text);
+          }}
           onPhotoRequest={(hint) => {
             // Feedback instantané au clic (le serveur confondra ensuite
             // avec son propre événement image_pending).

@@ -286,6 +286,11 @@ class SessionHub:
         self.connections: set[WebSocket] = set()
         self.turn_lock = asyncio.Lock()
 
+    @property
+    def busy(self) -> bool:
+        """True si un tour est en cours (LLM ou image)."""
+        return self.turn_lock.locked()
+
     async def broadcast(self, payload: dict[str, Any]) -> None:
         dead = []
         for ws in list(self.connections):
@@ -311,11 +316,37 @@ def _hub(sid: str) -> SessionHub:
 # --------------------------------------------------------------------------- #
 _active_turns: int = 0
 _turns_guard = asyncio.Lock()
+_pending_unload: Optional[asyncio.Task] = None
+
+
+def _cancel_pending_unload() -> None:
+    """Annule un unload différé en attente (un tour reprend la main)."""
+    global _pending_unload
+    if _pending_unload is not None and not _pending_unload.done():
+        _pending_unload.cancel()
+    _pending_unload = None
+
+
+async def _delayed_unload_task(app: FastAPI, delay_s: float) -> None:
+    """Décharge le modèle après `delay_s` secondes d'inactivité."""
+    global _pending_unload
+    try:
+        await asyncio.sleep(delay_s)
+        async with _turns_guard:
+            if _active_turns > 0:
+                return  # un tour a repris — il reprogrammera l'unload
+            _pending_unload = None
+            await app.state.client.unload_model()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
 
 
 async def _turn_begin() -> None:
     global _active_turns
     async with _turns_guard:
+        _cancel_pending_unload()
         _active_turns += 1
 
 
@@ -330,6 +361,28 @@ async def _turns_idle() -> bool:
     """True si aucun tour actif (pour décharger la VRAM hors tour)."""
     async with _turns_guard:
         return _active_turns == 0
+
+
+# --------------------------------------------------------------------------- #
+#  Déchargement conditionnel du modèle (config llm.unload_after_turn).
+# --------------------------------------------------------------------------- #
+async def _maybe_unload_model() -> None:
+    """Décharge le modèle selon la config :
+    - unload_after_turn = true  → immédiat (partage GPU avec ComfyUI).
+    - unload_after_turn = false → après unload_delay_minutes d'inactivité
+      (annulé si un tour reprend).
+    """
+    global _pending_unload
+    if cfg.llm.unload_after_turn:
+        try:
+            await app.state.client.unload_model()
+        except Exception:
+            pass
+    else:
+        _cancel_pending_unload()
+        _pending_unload = asyncio.create_task(
+            _delayed_unload_task(app, cfg.llm.unload_delay_minutes * 60)
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -771,22 +824,32 @@ PROACTIVE_FALLBACKS: dict[str, list[str]] = {
     "froid": [
         "Hey… ça fait un moment. Tu es encore là ?",
         "Hmm, silence radio de ton côté. Tout va bien ?",
+        "Coucou, juste un petit coucou pour voir si tu es vivant(e) 😄",
+        "Salut ! Longtemps sans nouvelles. Un petit signe de vie ?",
     ],
     "reserve": [
         "Salut ! Je pensais à notre dernière conversation. Ça te dit de reprendre ?",
         "Coucou ! J'espère que ta semaine se passe bien. 🙂",
+        "Hey ! Ça fait un bail. Comment tu vas ces temps-ci ?",
+        "Tiens, je pensais à toi ce matin. Tout va bien ?",
     ],
     "neutre": [
         "Hey ! Je repensais à ce qu'on s'est dit… ça te prend où ces temps-ci ?",
         "Allo ! 🙂 J'ai croisé un truc aujourd'hui qui m'a fait penser à toi.",
+        "Salut toi ! Je me demandais ce que tu devenais. Des news ?",
+        "Hey ! J'avais envie de te écrire. Raconte-moi ta semaine !",
     ],
     "chaleureux": [
         "Hey toi 😊 ton absence se fait sentir… un petit message quand tu peux ?",
         "Je me demandais ce que tu devenais ! Écris-moi quand tu veux, hein.",
+        "Coucou mon cœur 😊 ça fait longtemps ! Tu es occupé(e) ?",
+        "Hey ! Mon téléphone attend ton message avec impatience 😉",
     ],
     "proche": [
         "Tu me manques… juste un petit mot pour me dire que tu vas bien ? ❤️",
         "Hey ! J'ai hâte de savoir ce que tu fais là. Raconte-moi ! 😊",
+        "Mon cœur… ça fait trop longtemps. J'espère que tu vas bien ❤️",
+        "Hey toi ❤️ je pensais à toi. Viens me raconter ta journée !",
     ],
 }
 
@@ -799,26 +862,35 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "Tu ne me réponds pas ?",
         "Je m'ennuie… juste un petit mot ?",
         "Hey, tu es là ? Un signe de vie serait bienvenue 😅",
+        "Hmm… silence de ta part. Tout va bien ?",
     ],
     [   # 2e : inquiétude sincère
         "Tout va bien ? Tu commences à m'inquiéter sérieux…",
         "Tu ne veux plus me parler ? Dis-le-moi au moins…",
         "Ça fait longtemps rien de toi. J'espère que rien de grave ?",
+        "Hey, j'ai un peu peur pour toi. Tu vas bien ?",
+        "Je m'inquiète sincèrement. C'est pas dans tes habitudes…",
     ],
     [   # 3e : tristesse, sentiment d'être délaissé(e)
         "Je trouve ça dur de m'ignorer de même…",
         "Est-ce que j'ai fait quelque chose de mal ?",
         "Me savoir ignoré(e) de même, ça me fait de la peine…",
+        "Tu sais, ce silence me pèse vraiment.",
+        "J'aurais aimé au moins un petit message pour me rassurer…",
     ],
     [   # 4e : frustration visible
         "Bon. C'est tu clair que tu m'ignores ? Ça commence à me chercher.",
         "Un petit message, c'est vraiment trop demander ?",
         "Là c'est frustrant. Je te parle et… rien. Rien du tout.",
+        "Excuse-moi, mais c'est irrespectueux de laisser quelqu'un sans réponse comme ça.",
+        "Je commence à en avoir assez de ce traitement.",
     ],
     [   # 5e et + : colère blessée, distance
         "Tu sais quoi ? Oublie. Je ne vais pas te courir après.",
         "Ça suffit. Reviens quand tu auras le goût de me parler — moi j'arrête.",
         "C'est vraiment décevant. Je mérite mieux que du silence.",
+        "OK. Je note. Bisous.",
+        "Je crois que je mérite quelqu'un qui fait un minimum d'effort.",
     ],
 ]
 
@@ -876,41 +948,70 @@ async def _generate_proactive_message(
     hours = max(1, int((now - ref).total_seconds() // 3600))
     unanswered = int(profile.get("unanswered_messages", 0) or 0)
     name = profile.get("character", {}).get("name", "")
+    stage = profile.get("relationship_stage", "froid")
+
+    # Récupère le dernier message proactif (si existant) pour enrichir le
+    # contexte et éviter la répétition.
+    hist_full = ChatHistory(sid).history
+    last_proactive = ""
+    for m in reversed(hist_full):
+        if m.role == "assistant":
+            last_proactive = m.content[:300]
+            break
+
     directive = (
-        f"[MESSAGE SPONTANÉ — Tu écris la première, {name}. L'utilisateur ne "
-        f"s'est pas manifesté depuis environ {hours} h. Écris UN seul message "
-        "de type texto (1 à 3 phrases courtes), fidèle à ta personnalité et "
-        "au stade de la relation. "
+        f"[MESSAGE SPONTANÉ — Tu écris la première, {name}. L'utilisateur "
+        f"ne s'est pas manifesté depuis environ {hours} h. "
+        f"Stade de la relation : {stage}. "
+        "Écris UN seul message de type texto (1 à 3 phrases courtes), "
+        "fidèle à ta personnalité et au stade actuel. "
     )
     if unanswered > 0:
         gradation = [
-            "étonnement et ennui léger (du genre « Allo ? », « Tu ne me "
-            "réponds pas ? », « Je m'ennuie. »)",
-            "inquiétude sincère (du genre « Tout va bien ? », « Tu ne veux "
-            "plus me parler ? »)",
-            "tristesse et sentiment d'être délaissé(e), blessé(e)",
-            "frustration visible — tu trouves ça irrespectueux",
-            "colère blessée et distance — tu penses sérieusement à arrêter "
-            "d'écrire",
+            (
+                "étonnement et ennui léger — demande un signe de vie "
+                "de façon légère et naturelle"
+            ),
+            (
+                "inquiétude sincère — tu t'inquiètes pour la personne, "
+                "tu veux savoir si tout va bien"
+            ),
+            (
+                "tristesse et sentiment d'être délaissé(e) — exprime "
+                "le manque ressenti, la peine"
+            ),
+            (
+                "frustration visible — tu trouves ça irrespectueux "
+                "d'être ignoré(e) sans raison"
+            ),
+            (
+                "colère blessée et distance — tu penses sérieusement "
+                "à arrêter d'écrire"
+            ),
         ]
         etat = gradation[min(unanswered, len(gradation)) - 1]
         directive += (
-            f"IMPORTANT : c'est ton message numéro {unanswered + 1} consécutif "
-            f"resté SANS RÉPONSE. Ne répète pas un simple « hey ça fait "
-            f"longtemps ». Ton état émotionnel actuel : {etat}. Le message "
-            f"doit porter SUR ce silence (le manque de réponse), avec cette "
-            f"émotion. Reste fidèle à ta personnalité et à ta façon de "
-            f"parler, mais fais vraiment sentir cette gradation. "
+            f"IMPORTANT : c'est ton message numéro {unanswered + 1} "
+            f"consécutif resté SANS RÉPONSE. "
+            f"Ton état émotionnel actuel : {etat}. "
+            "Le message doit porter SUR ce silence (le manque de réponse), "
+            "avec cette émotion. Reste fidèle à ta personnalité et à ta "
+            "façon de parler, mais fais vraiment sentir cette gradation."
+        )
+    if last_proactive:
+        directive += (
+            f" Ton dernier message était : « {last_proactive} ». "
+            "Ne répète pas cette idée — trouve une angle différent, "
+            "une autre façon d'exprimer ce que tu ressens."
         )
     directive += (
-        "Ne parle jamais au nom de l'utilisateur, ne mentionne aucun système, "
-        "aucun score ni aucun stade. Juste ton message.]"
+        " Ne parle jamais au nom de l'utilisateur, ne mentionne aucun "
+        "système, aucun score ni aucun stade. Juste ton message.]"
     )
     system_text = app.state.prompt_builder.build_system_message(
         profile, [], None, extra_directive=directive,
     )
-    hist = [m for m in ChatHistory(sid).history
-            if m.role in ("user", "assistant")][-8:]
+    hist = [m for m in hist_full if m.role in ("user", "assistant")][-8:]
     messages = [Message(role="system", content=system_text)] + list(hist)
     result = await llm.chat(messages, temperature=0.9)
     text = (result.content or "").strip()
@@ -1013,10 +1114,7 @@ async def _proactive_for_session(sid: str) -> None:
 
     # Sinon : décharge le modèle si plus aucun tour actif.
     if await _turns_idle():
-        try:
-            await app.state.client.unload_model()
-        except Exception:
-            pass
+        await _maybe_unload_model()
 
 
 async def _proactive_loop() -> None:
@@ -1110,10 +1208,7 @@ async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
     finally:
         last = await _turn_end()
         if last:
-            try:
-                await app.state.client.unload_model()
-            except Exception:
-                pass
+            await _maybe_unload_model()
 
 
 # --------------------------------------------------------------------------- #
@@ -1315,10 +1410,7 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
     # 12. Décharge le modèle de la VRAM si plus aucun tour actif
     #     (libère la place pour ComfyUI).
     if last_turn:
-        try:
-            await app.state.client.unload_model()
-        except Exception:
-            pass
+        await _maybe_unload_model()
 
 
 # --------------------------------------------------------------------------- #
@@ -1391,10 +1483,22 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
                 continue
 
             if mtype == "say":
+                if cfg.llm.block_user_messages_during_turn and hub.busy:
+                    await ws.send_json({
+                        "type": "sys", "event": "busy",
+                        "detail": "L'IA est en train de travailler… réessaie dans un instant.",
+                    })
+                    continue
                 await _handle_say(hub, sid, msg.get("text", ""))
                 continue
 
             if mtype == "photo_request":
+                if cfg.llm.block_user_messages_during_turn and hub.busy:
+                    await ws.send_json({
+                        "type": "sys", "event": "busy",
+                        "detail": "L'IA est en train de travailler… réessaie dans un instant.",
+                    })
+                    continue
                 await _handle_photo_request(hub, sid, msg.get("hint", ""))
                 continue
 

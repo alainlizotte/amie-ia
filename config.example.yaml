@@ -12,6 +12,19 @@ llm:
   top_p: 0.95
   max_context_tokens: 16384
   think: false            # désactive le thinking (Gemma 4)
+  # Déchargement du modèle après le tour :
+  #   true  = comportement historique : la VRAM est libérée dès la fin du
+  #           dernier tour (partage du GPU avec ComfyUI).
+  #   false = le modèle reste chargé, puis est déchargé après
+  #           `unload_delay_minutes` minutes d'inactivité. Pratique si de la
+  #           RAM est ajoutée ou un meilleur GPU acheté : les tours
+  #           consécutifs n'ont plus à recharger le modèle.
+  unload_after_turn: true
+  unload_delay_minutes: 5  # délai d'inactivité (minutes) avant unload
+                            # quand unload_after_turn: false
+  # Bloque les messages des utilisateurs pendant que l'IA travaille
+  # (réfléchit, écrit ou génère une image) — évite les tours concurrents.
+  block_user_messages_during_turn: true
   options: {}
 
 server:

@@ -24,6 +24,7 @@ export function useChatSocket(sid: string | undefined) {
       appendDelta,
       endStream,
       setTyping,
+      setBusy,
       setStatus,
     } = store.getState();
 
@@ -44,6 +45,10 @@ export function useChatSocket(sid: string | undefined) {
             }));
           } else if (msg.event === "auth_failed") {
             setAuthError(msg.detail || "Authentification refusée.");
+          } else if (msg.event === "busy") {
+            setBusy(true);
+            addMessage({ id: uid(), role: "info", content: msg.detail || "L'IA est occupée…" });
+            setTimeout(() => setBusy(false), 3000);
           }
           break;
 
@@ -76,6 +81,7 @@ export function useChatSocket(sid: string | undefined) {
             .messages.find((m) => m.streaming && m.role === "assistant");
           if (streaming) endStream(streaming.id, msg.text);
           else addMessage({ id: uid(), role: "assistant", content: msg.text });
+          setBusy(false);
           break;
         }
 

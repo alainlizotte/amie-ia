@@ -24,6 +24,18 @@ class LLMConfig:
     top_p: float = 0.95
     max_context_tokens: int = 16384
     think: bool = False              # désactive le thinking (Gemma 4, Qwen3…)
+    # Déchargement du modèle après le tour :
+    # - True  : comportement historique — la VRAM est libérée dès la fin du
+    #           dernier tour actif (partage du GPU avec ComfyUI).
+    # - False : le modèle reste chargé et n'est déchargé qu'après
+    #           `unload_delay_minutes` minutes d'inactivité — utile avec plus
+    #           de RAM/VRAM : les tours consécutifs évitent de recharger le
+    #           modèle (gain de plusieurs secondes par tour).
+    unload_after_turn: bool = True
+    unload_delay_minutes: float = 5.0
+    # Bloque les messages des utilisateurs pendant que l'IA travaille
+    # (réfléchit, écrit ou génère une image) — évite les tours concurrents.
+    block_user_messages_during_turn: bool = True
     # Options natives transmises au backend (ex: num_ctx, top_k, …).
     options: dict[str, Any] = field(default_factory=dict)
 

@@ -6,6 +6,9 @@
 # Port : l'hôte écoute sur 8124 (conteneur interne 8000). Pour changer :
 #   set AMIE_PORT=9000 && docker compose up -d
 #
+# llamacpp (chat) est publié sur 8082, llamaembed (embeddings) sur 8083
+# pour coexister avec le projet D&D (8080/8081).
+#
 # ComfyUI (images) tourne sur l'hôte (8188) ; le conteneur y accède via
 # host.docker.internal.
 #
@@ -58,9 +61,9 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: amie-llamacpp
     ports:
-      # Publié pour le développement local ; surcharger avec LLAMACPP_PORT
-      # si ce port est déjà pris sur votre machine.
-      - "${LLAMACPP_PORT:-8080}:8080"
+      # Port hôte 8082/8083 pour éviter la collision avec le projet D&D
+      # (qui utilise déjà 8080/8081).
+      - "${LLAMACPP_PORT:-8082}:8080"
     volumes:
       - ./models:/models
     command: >
@@ -94,8 +97,8 @@ services:
     container_name: amie-llamaembed
     ports:
       # Port interne 8080 (exigé par le HEALTHCHECK de l'image), publié en
-      # 8081 côte hôte ; surcharger avec LLAMAEMBED_PORT si besoin.
-      - "${LLAMAEMBED_PORT:-8081}:8080"
+      # 8083 côte hôte (8081 est utilisé par le projet D&D).
+      - "${LLAMAEMBED_PORT:-8083}:8080"
     volumes:
       - ./models-embed:/models
     command: >
