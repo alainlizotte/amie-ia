@@ -51,13 +51,6 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 
-## 🖼 Captures d'écran
-
-| | |
-|---|---|
-| ![Écran de connexion](screenshots/ecran_connection.png) | ![Sélection de session](screenshots/selection_session.png) |
-| ![Sélection de personnage](screenshots/sélection_personnage.png) | ![Création de personnage](screenshots/création_personnage.png) |
-| ![Conversation principale](screenshots/chat_principal.png) | ![Album photo](screenshots/album_photo.png) |
 
 ## ⚙️ Comment ça marche
 
