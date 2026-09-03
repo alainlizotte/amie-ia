@@ -51,8 +51,11 @@ services:
   # retirer la section deploy.resources (inférence CPU, plus lente).
   #
   # Flags :
-  #   -ngl all           : toutes les couches sur GPU
+  #   -ngl ${LLAMACPP_NGL} (99 par défaut) : nombre de couches sur GPU
+  #           99 > nb de couches de gemma-4-E4B → modèle chargé EN ENTIER en VRAM
+  #           (queue si la VRAM manque). Réduire (ex. 32) pour partager avec ComfyUI.
   #   -c 32768           : taille du contexte
+  #   -n 8192            : max_tokens (plafond de génération par réponse)
   #   -ctk q8_0 -ctv q8_0 : KV cache K/V en 8-bit
   #   --jinja            : template Jinja natif Gemma
   #   --flash-attn on    : Flash Attention (réduit VRAM KV cache)
@@ -71,8 +74,9 @@ services:
       --port 8080
       --models-dir /models
       --models-max 1
-      -ngl 32
+      -ngl ${LLAMACPP_NGL:-99}
       -c 32768
+      -n 8192
       -ctk q8_0
       -ctv q8_0
       --jinja

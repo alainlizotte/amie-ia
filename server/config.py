@@ -23,6 +23,7 @@ class LLMConfig:
     temperature: float = 1.0
     top_p: float = 0.95
     max_context_tokens: int = 16384
+    max_tokens: int = 8192           # plafond de génération par réponse (llama.cpp -n)
     think: bool = False              # désactive le thinking (Gemma 4, Qwen3…)
     # Déchargement du modèle après le tour :
     # - True  : comportement historique — la VRAM est libérée dès la fin du
@@ -60,8 +61,8 @@ class RelationConfig:
     """Paramètres de la mécanique relationnelle — 100 % côté serveur,
     indépendants du LLM (le modèle ne peut ni les contourner ni les calculer)."""
     default_score: int = 100          # deux inconnus qui se rencontrent
-    delta_max: int = 8                # plafond de progression par message
-    delta_min: int = -10              # plancher de régression par message
+    delta_max: int = 16               # plafond de progression par message
+    delta_min: int = -20              # plancher de régression par message
     cooldown_hours: float = 24.0      # délai min entre deux scénarios injectés
     event_max_attempts: int = 3       # tours max avant consommation forcée d'un event
     event_consume_similarity: float = 0.55   # similarité cosinus event ↔ réponse

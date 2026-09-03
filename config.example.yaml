@@ -11,6 +11,7 @@ llm:
   temperature: 1.0
   top_p: 0.95
   max_context_tokens: 16384
+  max_tokens: 8192        # plafond de génération par réponse (llama.cpp -n)
   think: false            # désactive le thinking (Gemma 4)
   # Déchargement du modèle après le tour :
   #   true  = comportement historique : la VRAM est libérée dès la fin du
@@ -40,8 +41,8 @@ paths:
 
 relation:
   default_score: 100        # deux inconnus qui se rencontrent
-  delta_max: 8              # plafond de progression par message
-  delta_min: -10            # plancher de régression par message
+  delta_max: 16             # plafond de progression par message
+  delta_min: -20            # plancher de régression par message
   cooldown_hours: 24.0      # délai min entre deux scénarios injectés
   event_max_attempts: 3     # tours max avant consommation forcée d'un scénario
   event_consume_similarity: 0.55   # cosinus scénario ↔ réponse

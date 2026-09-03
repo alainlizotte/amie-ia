@@ -89,14 +89,16 @@ class LLMClient:
         self,
         messages: list[Message],
         temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> ChatResult:
-        """Appel non-streaming (utilisé pour l'extraction de souvenirs)."""
+        """Appel non-streaming (extraction de souvenirs, messages spontanés)."""
         await self.ensure_model_loaded()
         payload: dict[str, Any] = {
             "model": self.cfg.model,
             "messages": [m.to_openai() for m in messages],
             "temperature": temperature if temperature is not None else self.cfg.temperature,
             "top_p": self.cfg.top_p,
+            "max_tokens": max_tokens if max_tokens is not None else self.cfg.max_tokens,
             "stream": False,
         }
         if self.cfg.options:
@@ -144,6 +146,7 @@ class LLMClient:
             "messages": [m.to_openai() for m in messages],
             "temperature": temperature if temperature is not None else self.cfg.temperature,
             "top_p": self.cfg.top_p,
+            "max_tokens": self.cfg.max_tokens,
             "stream": True,
         }
         if self.cfg.options:

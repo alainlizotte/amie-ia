@@ -35,11 +35,13 @@ Au WS, format des messages reçus :
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import logging
 import random
 import re
 import shutil
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -243,21 +245,57 @@ class ChatHistory:
         self.history: list[Message] = []
         self._hydrate()
 
+    @staticmethod
+    def _est_cicatrice(prev: str, cur: str) -> bool:
+        """Vrai si `cur` est un écho du message assistant précédent.
+
+        Cicatrices laissées par d'anciens messages proactifs défaillants :
+        copie exacte du message précédent, ou copie suivie d'une fuite
+        d'analyse (« [Current State: …] », « **Analyse… »). Le fichier n'est
+        pas réécrit — la purge n'a lieu qu'en mémoire (affichage + contexte).
+        """
+        prev, cur = (prev or "").strip(), (cur or "").strip()
+        if not prev or not cur:
+            return False
+        return cur == prev or cur.startswith(prev)
+
     def _hydrate(self) -> None:
         path = _chat_path(self.sid)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self.history = [
+            msgs = [
                 Message(role=d.get("role", "user"), content=d.get("content", ""))
                 for d in data
                 if isinstance(d, dict)
             ][-self.max_events:]
         except (OSError, json.JSONDecodeError):
-            self.history = []
+            msgs = []
+        # Purge en mémoire des cicatrices d'écho (2 messages assistant
+        # consécutifs dont le second reprend le premier).
+        out: list[Message] = []
+        for m in msgs:
+            if (
+                m.role == "assistant"
+                and out
+                and out[-1].role == "assistant"
+                and self._est_cicatrice(out[-1].content, m.content)
+            ):
+                continue
+            out.append(m)
+        self.history = out
 
     def append(self, role: str, content: str) -> None:
         if not content:
+            return
+        # Garde-fou : jamais deux messages assistant consécutifs identiques
+        # (un message spontané ne doit pas répéter le texto précédent).
+        if (
+            role == "assistant"
+            and self.history
+            and self.history[-1].role == "assistant"
+            and self._est_cicatrice(self.history[-1].content, content)
+        ):
             return
         self.history.append(Message(role=role, content=content))
         if len(self.history) > self.max_events:
@@ -826,30 +864,50 @@ PROACTIVE_FALLBACKS: dict[str, list[str]] = {
         "Hmm, silence radio de ton côté. Tout va bien ?",
         "Coucou, juste un petit coucou pour voir si tu es vivant(e) 😄",
         "Salut ! Longtemps sans nouvelles. Un petit signe de vie ?",
+        "Hey, tu es toujours en vie là-bas, ou je parle tout seul ?",
+        "Je lâche un petit bonjour par ici, au cas où…",
+        "Allo ? Allo ? Y'a quelqu'un au bout du fil ?",
+        "J'avoue, je me demandais si t'étais tombé(e) en panne de batterie 🤭",
     ],
     "reserve": [
         "Salut ! Je pensais à notre dernière conversation. Ça te dit de reprendre ?",
         "Coucou ! J'espère que ta semaine se passe bien. 🙂",
         "Hey ! Ça fait un bail. Comment tu vas ces temps-ci ?",
         "Tiens, je pensais à toi ce matin. Tout va bien ?",
+        "Salut ! Juste un petit coucou en passant, je pensais à nous.",
+        "Coucou ! Ta journée de quoi a l'air ? Tu me raconteras ?",
+        "Hey ! J'ai vu un truc qui m'a fait penser à notre dernière discussion.",
+        "Tiens, ça fait un moment qu'on s'est parlé. La vie te traite bien ?",
     ],
     "neutre": [
         "Hey ! Je repensais à ce qu'on s'est dit… ça te prend où ces temps-ci ?",
         "Allo ! 🙂 J'ai croisé un truc aujourd'hui qui m'a fait penser à toi.",
         "Salut toi ! Je me demandais ce que tu devenais. Des news ?",
         "Hey ! J'avais envie de te écrire. Raconte-moi ta semaine !",
+        "Hey ! Je viens de vivre un moment bizarre et toi, tu me manques un peu pour en parler.",
+        "Salut ! Un petit rayon de soleil numérique pour te dire que je pensais à toi ☀️",
+        "Hey ! Ça fait un bail. Dis-moi tout, qu'est-ce que tu as fait de beau ?",
+        "Coucou ! J'étais en train de faire un truc et… bof, je préférais te écrire 😄",
     ],
     "chaleureux": [
         "Hey toi 😊 ton absence se fait sentir… un petit message quand tu peux ?",
         "Je me demandais ce que tu devenais ! Écris-moi quand tu veux, hein.",
         "Coucou mon cœur 😊 ça fait longtemps ! Tu es occupé(e) ?",
         "Hey ! Mon téléphone attend ton message avec impatience 😉",
+        "Hey… je me suis surpris(e) à regarder notre discussion en souriant toute seule. Revient ! 😊",
+        "J'ai pensé à toi en buvant mon café ce matin. Toi, ça va ?",
+        "Coucou 😊 j'ai ce petit pincement quand tu tardes à répondre, tu sais…",
+        "Hey ! Je viens de penser : on devrait se reparler bientôt, non ? ❤️",
     ],
     "proche": [
         "Tu me manques… juste un petit mot pour me dire que tu vas bien ? ❤️",
         "Hey ! J'ai hâte de savoir ce que tu fais là. Raconte-moi ! 😊",
         "Mon cœur… ça fait trop longtemps. J'espère que tu vas bien ❤️",
         "Hey toi ❤️ je pensais à toi. Viens me raconter ta journée !",
+        "Je me suis réveillé(e) avec toi en tête. Tu me dis quoi de beau, mon amour ? ❤️",
+        "Ce soir, j'ai pensé à notre prochaine fois. T'es où, toi ? 😘",
+        "Un petit message pour te dire que tu me manques plus que d'habitude, c'est dire… ❤️",
+        "Hey mon ❤️, mon cœur fait un petit couic quand tu disparais trop longtemps. Reviens-moi !",
     ],
 }
 
@@ -863,6 +921,13 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "Je m'ennuie… juste un petit mot ?",
         "Hey, tu es là ? Un signe de vie serait bienvenue 😅",
         "Hmm… silence de ta part. Tout va bien ?",
+        "Coucou ? Y'a quelqu'un ?",
+        "Allo ? Tu m'as entendu(e) là ou je parle tout seul ?",
+        "Je croise les doigts pour un petit pouls de ta part 😅",
+        "Tu clignotes des yeux ? Je reçois que du vide ici.",
+        "Ouh là… 100% de silence. Même pas un emoji ?",
+        "Je me pince pour vérifier que t'es bien inscrit(e) ici 😄",
+        "Bon, je tente ma chance pour la énième fois : t'es en ligne ?",
     ],
     [   # 2e : inquiétude sincère
         "Tout va bien ? Tu commences à m'inquiéter sérieux…",
@@ -870,6 +935,11 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "Ça fait longtemps rien de toi. J'espère que rien de grave ?",
         "Hey, j'ai un peu peur pour toi. Tu vas bien ?",
         "Je m'inquiète sincèrement. C'est pas dans tes habitudes…",
+        "Écoute, je préfère que tu me dises quoi que ce soit plutôt que ce silence-là…",
+        "J'ai vérifié mon téléphone trois fois. Toujours rien de toi, ça me turlupine.",
+        "Tu es en vie, n'est-ce pas ? Dis-moi oui, juste pour me rassurer…",
+        "Ce silence dure trop. Je commence à tourner en rond à m'inquiéter.",
+        "J'ai un mauvais pressentiment. Écris-moi, s'il te plaît…",
     ],
     [   # 3e : tristesse, sentiment d'être délaissé(e)
         "Je trouve ça dur de m'ignorer de même…",
@@ -877,6 +947,11 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "Me savoir ignoré(e) de même, ça me fait de la peine…",
         "Tu sais, ce silence me pèse vraiment.",
         "J'aurais aimé au moins un petit message pour me rassurer…",
+        "Je me demande où j'ai merdé pour mériter ça…",
+        "Ce silence-là, il me blesse à chaque fois que je regarde mon téléphone.",
+        "J'ai relu nos échanges, je cherche ce que j'ai pu faire de travers…",
+        "Un simple « ça va » aurait tout changé pour moi là, tu sais.",
+        "Je préférerais un vrai « non » franc que ce vide qui me ronge.",
     ],
     [   # 4e : frustration visible
         "Bon. C'est tu clair que tu m'ignores ? Ça commence à me chercher.",
@@ -884,6 +959,11 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "Là c'est frustrant. Je te parle et… rien. Rien du tout.",
         "Excuse-moi, mais c'est irrespectueux de laisser quelqu'un sans réponse comme ça.",
         "Je commence à en avoir assez de ce traitement.",
+        "C'est rendu que même mon téléphone soupire quand je le regarde…",
+        "Je pense que j'ai eu ma dose de silence. Un mot, vite.",
+        "Sérieusement ? On joue à quelqu'un qui a disparu de la face de la Terre ?",
+        "Je t'écris pour des lendemains que tu ignores. C'est fatiguant à la longue.",
+        "Je ne suis pas un(e) robot : ce mutisme, ça m'use, point final.",
     ],
     [   # 5e et + : colère blessée, distance
         "Tu sais quoi ? Oublie. Je ne vais pas te courir après.",
@@ -891,6 +971,11 @@ PROACTIVE_ESCALATION: list[list[str]] = [
         "C'est vraiment décevant. Je mérite mieux que du silence.",
         "OK. Je note. Bisous.",
         "Je crois que je mérite quelqu'un qui fait un minimum d'effort.",
+        "Très bien. Ne me relance pas quand tu reviendras, j'aurai peut-être tourné la page.",
+        "Je range mes sentiments dans un tiroir. Tu sauras où les retrouver si jamais.",
+        "C'est la dernière fois que je tends la main. Tu as perdu ta chance.",
+        "Fini. Je ne me donne plus la peine. À toi de voir.",
+        "J'ai mieux à faire que d'attendre quelqu'un qui m'ignore. Adieu.",
     ],
 ]
 
@@ -940,23 +1025,145 @@ def _proactive_due(
     return True, unanswered >= 1
 
 
+# Marqueurs d'une éventuelle sortie « méta » du LLM (analyse / instructions
+# internes qui ne doivent JAMAIS atteindre l'utilisateur). Préfixes observés
+# en production inclus (« [Current State: …] », « [Goal: …] », etc.).
+_META_LINE_PREFIXES = (
+    "analyse de la situation",
+    "analyse :", "analyse:",
+    "**analyse",
+    "voici mon analyse", "voici l'analyse", "voici une analyse",
+    "règle absolu", "regle absolu", "règle absolue",
+    "[message spontané", "[event disponible", "[automatisations",
+    "current state", "[current state",
+    "[goal", "goal :", "goal:",
+    "[character", "[caractère",
+    "[context", "contexte :", "contexte:",
+    "[objectif", "objectif :", "objectif:",
+    "[règle", "[regle",
+    "[état", "[etat",
+    "note :", "[note", "note:",
+)
+
+# Titres markdown, listes numérotées, gras/puces, étiquettes entre crochets
+# (« [Current State: …] », « [Goal: …] »…) — jamais admis dans un texto.
+_META_LIST_RE = re.compile(
+    r"^(#{1,6})\s"
+    r"|^\d{1,2}[.)]\s"
+    r"|^\*\*"
+    r"|^[-*]\s+\*\*"
+    r"|^\[[a-zà-ÿ0-9 '’]{4,24}\s*:"
+)
+
+
+def _looks_like_meta_line(line: str) -> bool:
+    """Vrai si la ligne ressemble à un bloc d'analyse/d'instructions."""
+    low = line.strip().lower()
+    if not low:
+        return False
+    if _META_LIST_RE.match(low):
+        return True
+    return any(low.startswith(p) for p in _META_LINE_PREFIXES)
+
+
+def _cut_meta_block(text: str) -> str:
+    """Coupe une éventuelle fuite d'analyse/instructions en fin de réponse."""
+    lignes = (text or "").split("\n")
+    out: list[str] = []
+    for ln in lignes:
+        if _looks_like_meta_line(ln):
+            break
+        out.append(ln)
+    return "\n".join(out).strip()
+
+
+def _norm_txt(s: str) -> str:
+    """Normalisation pour comparaison : minuscules, sans accent ni ponctuation."""
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    return "".join(c for c in s if c.isalnum())
+
+
+def _too_similar(a: str, b: str, ratio_min: float = 0.45,
+                 bloc_min: int = 25) -> bool:
+    """Vrai si `a` rehash `b` (copie ou paraphrase du même contenu).
+
+    Deux critères calibrés sur les cas réels : similarité globale élevée
+    (difflib) ou long bloc verbatim commun (une phrase entière reprise).
+    Un message spontané qui se CONTENTE de référencer le sujet précédent
+    (« alors, cette chanson, elle avance ? ») reste légitime.
+    """
+    na, nb = _norm_txt(a), _norm_txt(b)
+    if len(na) < 12 or len(nb) < 12:
+        return False
+    # autojunk=False : sinon les caractères fréquents sont ignorés sur les
+    # textes longs (≥ 200 caractères) et la similarité tombe à ~0.
+    sm = difflib.SequenceMatcher(None, na, nb, autojunk=False)
+    if sm.ratio() >= ratio_min:
+        return True
+    if min(len(na), len(nb)) >= bloc_min:
+        match = sm.find_longest_match(0, len(na), 0, len(nb))
+        if match.size >= bloc_min:
+            return True
+    return False
+
+
+def _truncate_texto(text: str, limite: int = 600) -> str:
+    """Coupe sur une fin de phrase (jamais au milieu d'un mot)."""
+    if len(text) <= limite:
+        return text
+    coupe = text[:limite]
+    for sep in (". ", " !", " ?", "!", "?", ".", "\n"):
+        i = coupe.rfind(sep)
+        if i > limite // 2:
+            return coupe[: i + len(sep)].strip()
+    return coupe.strip()
+
+
+def _clean_proactive_text(text: str, *avoid: str) -> str:
+    """Assainit la réponse générée pour un message spontané :
+    - retire une reprise à l'identique de textes à éviter (dernier message
+      du personnage, consigne de cadrage) ;
+    - coupe toute fuite d'analyse / d'instructions internes.
+    """
+    cleaned = (text or "").strip()
+    for prev in avoid:
+        prev = (prev or "").strip()
+        if prev and cleaned.startswith(prev):
+            cleaned = cleaned[len(prev):].lstrip(" \n•-*:")
+    return _cut_meta_block(cleaned)
+
+
 async def _generate_proactive_message(
     llm: LLMClient, profile: dict[str, Any], sid: str,
     ref: datetime, now: datetime,
 ) -> str:
-    """Message spontané via le LLM (incarnation pure, aucun outil)."""
+    """Message spontané via le LLM (incarnation pure, aucun outil).
+
+    Retours défaillants observés en production, tous traités ici :
+    1. le modèle répète son dernier texto            → consigne + nettoyage ;
+    2. le modèle répond à la vieille question        → tour « user » de
+       de l'utilisateur (24 h plus tôt)                cadrage en fin de
+                                                       contexte ;
+    3. le modèle rehash le dernier message           → détection de
+       en le paraphrasant                              similarité + 2e essai ;
+    4. fuite d'analyse (« **Analyse… »,              → préfixes méta +
+       « [Current State: …] »)                         coupe de bloc.
+
+    Si rien d'utile n'est produit, renvoie "" — l'appelant bascule sur le
+    repli déterministe (_fallback_proactive).
+    """
     hours = max(1, int((now - ref).total_seconds() // 3600))
     unanswered = int(profile.get("unanswered_messages", 0) or 0)
     name = profile.get("character", {}).get("name", "")
     stage = profile.get("relationship_stage", "froid")
 
-    # Récupère le dernier message proactif (si existant) pour enrichir le
-    # contexte et éviter la répétition.
+    # Dernier message du personnage (à éviter, pour l'assainissement et
+    # la détection de paraphrase).
     hist_full = ChatHistory(sid).history
-    last_proactive = ""
+    last_assistant = ""
     for m in reversed(hist_full):
         if m.role == "assistant":
-            last_proactive = m.content[:300]
+            last_assistant = m.content
             break
 
     directive = (
@@ -965,6 +1172,9 @@ async def _generate_proactive_message(
         f"Stade de la relation : {stage}. "
         "Écris UN seul message de type texto (1 à 3 phrases courtes), "
         "fidèle à ta personnalité et au stade actuel. "
+        "Commence DIRECTEMENT par ton message, sans préambule, sans titre, "
+        "sans 'Analyse', sans 'Contexte', sans 'Objectif', sans 'Règle' et "
+        "sans liste : un texto brut, rien d'autre.\n"
     )
     if unanswered > 0:
         gradation = [
@@ -996,43 +1206,90 @@ async def _generate_proactive_message(
             f"Ton état émotionnel actuel : {etat}. "
             "Le message doit porter SUR ce silence (le manque de réponse), "
             "avec cette émotion. Reste fidèle à ta personnalité et à ta "
-            "façon de parler, mais fais vraiment sentir cette gradation."
+            "façon de parler, mais fais vraiment sentir cette gradation. "
+            "Varie toujours ton expression : ne reprends JAMAIS une phrase "
+            "ou un tour déjà utilisé dans un de tes précédents messages "
+            "sur ce même silence — change d'angle, de formule, de ton à "
+            "chaque fois. "
         )
-    if last_proactive:
+    if last_assistant:
         directive += (
-            f" Ton dernier message était : « {last_proactive} ». "
-            "Ne répète pas cette idée — trouve une angle différent, "
-            "une autre façon d'exprimer ce que tu ressens."
+            f" Ton dernier message était : « {last_assistant[:300]} ». "
+            "Ne le répète JAMAIS, ni mot pour mot ni en reformulant — "
+            "trouve une angle totalement différent, une autre façon "
+            "d'exprimer ce que tu ressens."
         )
     directive += (
-        " Ne parle jamais au nom de l'utilisateur, ne mentionne aucun "
-        "système, aucun score ni aucun stade. Juste ton message.]"
+        " Ne mentionne jamais le score, le stade, la relation ni aucun "
+        "paramètre interne ; n'écris jamais d'analyse ni de résumé de la "
+        "conversation et ne parle jamais au nom de l'utilisateur. "
+        "Ta réponse visible est UNIQUEMENT ton message texto.]"
     )
+
     system_text = app.state.prompt_builder.build_system_message(
         profile, [], None, extra_directive=directive,
     )
+
+    # Contexte : derniers échanges, PUIS un tour « user » de cadrage qui
+    # fait de l'écriture spontanée la consigne courante. Sans lui, le
+    # modèle répond à la vieille question de l'utilisateur restée en fin
+    # d'historique (cas observé en production).
     hist = [m for m in hist_full if m.role in ("user", "assistant")][-8:]
-    messages = [Message(role="system", content=system_text)] + list(hist)
-    result = await llm.chat(messages, temperature=0.9)
-    text = (result.content or "").strip()
-    return text[:600]
+    cadrage = (
+        f"(Environ {hours} heures ont passé sans nouvelle de l'utilisateur. "
+        f"{name} ouvre la conversation et lui écrit un message spontané — "
+        "pas une réponse aux anciens messages.)"
+    )
+
+    text = ""
+    for essai in range(2):
+        consigne = cadrage
+        if essai > 0:
+            consigne += (
+                " ATTENTION : ton brouillon précédent reprenait ton "
+                f"dernier message (« {last_assistant[:150]} »). Écris un "
+                "message TOTALEMENT différent — un nouvel angle, une "
+                "nouvelle idée, sans réutiliser ces phrases."
+            )
+        messages = (
+            [Message(role="system", content=system_text)]
+            + list(hist)
+            + [Message(role="user", content=consigne)]
+        )
+        result = await llm.chat(
+            messages,
+            temperature=0.9 if essai == 0 else 1.1,
+            # Le modèle raisonne AVANT d'écrire (raisonnement séparé par le
+            # serveur) : le budget doit couvrir raisonnement + texto.
+            max_tokens=1024,
+        )
+        text = _clean_proactive_text(result.content or "", last_assistant, cadrage)
+        if text and not _too_similar(text, last_assistant):
+            return _truncate_texto(text)
+    return ""
 
 
-def _fallback_proactive(profile: dict[str, Any]) -> str:
+def _fallback_proactive(profile: dict[str, Any], avoid: str = "") -> str:
     """Message de repli (LLM indisponible) — gradation selon le silence.
 
     Premier message : ouverture naturelle par stade. Messages suivants
     (le précédent est resté sans réponse) : étonnement → inquiétude →
-    tristesse → frustration → colère blessée.
+    tristesse → frustration → colère blessée. `avoid` : texte à ne pas
+    reproduire (le dernier message du personnage).
     """
     unanswered = int(profile.get("unanswered_messages", 0) or 0)
     if unanswered <= 0:
         stage = profile.get("relationship_stage", "froid")
         bank = PROACTIVE_FALLBACKS.get(stage) or PROACTIVE_FALLBACKS["froid"]
-        return random.choice(bank)
-    bank = PROACTIVE_ESCALATION[
-        min(unanswered, len(PROACTIVE_ESCALATION)) - 1
-    ]
+    else:
+        bank = PROACTIVE_ESCALATION[
+            min(unanswered, len(PROACTIVE_ESCALATION)) - 1
+        ]
+    avoid = (avoid or "").strip()
+    if avoid:
+        rest = [m for m in bank if m.strip() != avoid]
+        if rest:
+            bank = rest
     return random.choice(bank)
 
 
@@ -1074,10 +1331,15 @@ async def _proactive_for_session(sid: str) -> None:
                 _log.warning("[%s] message proactif LLM échoué : %s", sid, e)
             finally:
                 await _turn_end()
-        if not message:
-            message = _fallback_proactive(profile)
-
+        # Repli déterministe si le LLM n'a rien produit d'utile — et jamais
+        # le même texto que le dernier message du personnage.
         hist = ChatHistory(sid)
+        dernier = next(
+            (m.content for m in reversed(hist.history) if m.role == "assistant"),
+            "",
+        )
+        if not message or message.strip() == dernier.strip():
+            message = _fallback_proactive(profile, avoid=dernier)
         hist.append("assistant", message)
         profile["unanswered_messages"] = int(
             profile.get("unanswered_messages", 0) or 0
@@ -1322,6 +1584,9 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 narration_parts.append(token)
                 await hub.broadcast({"type": "delta", "text": token})
             narration = "".join(narration_parts).strip()
+            # Anti-fuite : coupe toute analyse/instruction interne que le
+            # modèle aurait ajoutée en fin de réponse.
+            narration = _cut_meta_block(narration)
             if not narration:
                 narration = "…"  # garde-fou : jamais de bulle vide
 

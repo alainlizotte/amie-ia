@@ -47,27 +47,27 @@ class TestInsultes:
 
 class TestPositifs:
     def test_compliment_tu_es_adjectif(self):
-        assert compute_delta("Tu es vraiment passionnante", "...", "froid") >= 3
+        assert compute_delta("Tu es vraiment passionnante", "...", "froid") >= 6
 
     def test_mots_positifs_cumules_plafonnes(self):
         d = compute_delta(
             "merci super génial magnifique bravo excellent parfait adorable",
             "...", "froid",
         )
-        assert d == 8  # clamp delta_max
+        assert d == 16  # clamp delta_max
 
     def test_excuses(self):
-        assert compute_delta("pardon, je n'aurais pas dû dire ça", "...", "rejet") >= 2
+        assert compute_delta("pardon, je n'aurais pas dû dire ça", "...", "rejet") >= 4
 
     def test_engagement_message_long(self):
         long_msg = "j'aime bien discuter avec toi " * 10  # > 200 chars
-        assert compute_delta(long_msg, "...", "neutre") >= 2
+        assert compute_delta(long_msg, "...", "neutre") >= 4
 
 
 class TestInsistance:
     def test_refusee_aux_stades_bas(self):
         for st in ("rejet", "froid", "reserve", "neutre"):
-            assert compute_delta("envoie une photo de toi", "...", st) <= -3
+            assert compute_delta("envoie une photo de toi", "...", st) <= -6
 
     def test_toleree_au_stade_proche_pas_de_malus_specifique(self):
         # Au stade proche, pas de malus d'insistance (peut rester neutre).
@@ -77,7 +77,7 @@ class TestInsistance:
 class TestClamp:
     def test_plancher(self):
         horrible = "tu es une stupide connasse débile idiote, je te déteste"
-        assert compute_delta(horrible, "...", "rejet") == -10
+        assert compute_delta(horrible, "...", "rejet") == -20
 
 
 class TestTimeDecay:

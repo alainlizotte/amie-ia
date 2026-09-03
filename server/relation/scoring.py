@@ -4,11 +4,14 @@ Portage intégral de la logique `outlet` du Filter
 `relationship_context_injector.py` (projet OpenWebUI d'origine) :
 - mots-clés négatifs (insultes) → malus forcé ;
 - mots-clés positifs (compliments, remerciements) → bonus ;
-- patterns « tu es [adjectif positif] » → +3 ;
-- excuses sincères → +2 ;
-- insistance inappropriée à un stade bas → -3 ;
-- politesses neutres → +1 ; engagement (message long) → +1 ;
+- patterns « tu es [adjectif positif] » → +6 ;
+- excuses sincères → +4 ;
+- insistance inappropriée à un stade bas → -6 ;
+- politesses neutres → +2 ; engagement (message long) → +2 ;
 - clamp final dans [delta_min, delta_max].
+
+Les valeurs sont deux fois plus élevées que la version d'origine pour que
+les stades soient atteints plus rapidement.
 
 Le score de relation ne dépend donc JAMAIS de l'appréciation du modèle.
 """
@@ -96,8 +99,8 @@ def compute_delta(
     user_msg: str,
     assistant_msg: str,
     current_stage: str,
-    delta_max: int = 8,
-    delta_min: int = -10,
+    delta_max: int = 16,
+    delta_min: int = -20,
 ) -> int:
     """Calcule le delta de score d'un tour (mots-clés + patterns heuristiques).
 
@@ -110,16 +113,16 @@ def compute_delta(
     for kw in NEGATIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
             if re.search(r"\b(tu es|t'es|espece de|espèce de|sale)\b", user_lower):
-                delta -= 8
+                delta -= 16
             else:
-                delta -= 5
+                delta -= 10
 
     # 2) Compliments / remerciements.
     for kw in POSITIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
-            delta += 2
+            delta += 4
 
-    # 3) « tu es [adjectif positif] » → +3 (un seul bonus par message).
+    # 3) « tu es [adjectif positif] » → +6 (un seul bonus par message).
     for adj in POSITIVE_ADJECTIVES:
         pattern = (
             r"\b(tu es|t'es|vous etes|vous êtes)\b[^.?!]{0,30}\b"
@@ -127,31 +130,31 @@ def compute_delta(
             + r"\b"
         )
         if re.search(pattern, user_lower):
-            delta += 3
+            delta += 6
             break
 
-    # 4) Excuses sincères → +2 (un seul bonus).
+    # 4) Excuses sincères → +4 (un seul bonus).
     for ap_kw in APOLOGY_KEYWORDS:
         if _kw_hit(ap_kw, user_lower):
-            delta += 2
+            delta += 4
             break
 
-    # 5) Insistance inappropriée à un stade bas → -3.
+    # 5) Insistance inappropriée à un stade bas → -6.
     for ins_kw in INAPPROPRIATE_INSISTENCE_KEYWORDS:
         if _kw_hit(ins_kw, user_lower):
             if current_stage in ("rejet", "froid", "reserve", "neutre"):
-                delta -= 3
+                delta -= 6
             break
 
-    # 6) Politesse neutre → +1.
+    # 6) Politesse neutre → +2.
     for neu_kw in NEUTRAL_POSITIVE_KEYWORDS:
         if _kw_hit(neu_kw, user_lower):
-            delta += 1
+            delta += 2
             break
 
-    # 7) Bonus d'engagement (message détaillé > 200 caractères) → +1.
+    # 7) Bonus d'engagement (message détaillé > 200 caractères) → +2.
     if isinstance(user_msg, str) and len(user_msg) > 200:
-        delta += 1
+        delta += 2
 
     return max(delta_min, min(delta_max, delta))
 
