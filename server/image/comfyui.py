@@ -18,6 +18,8 @@ from typing import Any, Optional
 
 import httpx
 
+from .. import gpu as _gpu
+
 USAGES_VALIDES = {"portrait", "photo"}
 
 DEFAULT_TIMEOUT_TOTAL = 300
@@ -186,9 +188,17 @@ class ComfyUIBackend:
             raise ComfyUIError(f"Usage '{usage}' inconnu. Validés : {sorted(USAGES_VALIDES)}.")
         graph = self._load_workflow(usage)
         graph, seed = self._patch_workflow(graph, prompt_text, usage, seed)
-        prompt_id = await self._submit_prompt(graph)
-        entry = await self._poll_history(prompt_id)
-        await self._download_png(entry, dest_path)
+        # Arbitrage GPU : attend la fin du tour LLM en cours (une soumission
+        # ComfyUI ne doit JAMAIS chevaucher une requête llama.cpp). Une
+        # génération portée par le tour LLM lui-même (photo d'initiative)
+        # passe sans attendre — elle est déjà séquentielle.
+        await _gpu.comfy_begin()
+        try:
+            prompt_id = await self._submit_prompt(graph)
+            entry = await self._poll_history(prompt_id)
+            await self._download_png(entry, dest_path)
+        finally:
+            await _gpu.comfy_end()
         return dest_path, seed
 
     async def dispo(self) -> bool:

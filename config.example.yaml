@@ -26,6 +26,10 @@ llm:
   # Bloque les messages des utilisateurs pendant que l'IA travaille
   # (réfléchit, écrit ou génère une image) — évite les tours concurrents.
   block_user_messages_during_turn: true
+  # Streaming de la réponse vers le(s) client(s) :
+  #   true  = les tokens arrivent au fil de l'eau (effet « tapé en direct ») ;
+  #   false = la réponse complète arrive en un seul bloc à la fin.
+  stream_to_clients: true
   options: {}
 
 server:
