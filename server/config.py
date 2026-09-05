@@ -37,6 +37,11 @@ class LLMConfig:
     # Bloque les messages des utilisateurs pendant que l'IA travaille
     # (réfléchit, écrit ou génère une image) — évite les tours concurrents.
     block_user_messages_during_turn: bool = True
+    # Streaming de la réponse vers le(s) client(s) :
+    # - True  : les tokens sont diffusés au fil de l'eau (défaut).
+    # - False : la réponse complète est diffusée en un seul bloc à la fin
+    #           du tour (le client ne voit rien pendant la génération).
+    stream_to_clients: bool = True
     # Options natives transmises au backend (ex: num_ctx, top_k, …).
     options: dict[str, Any] = field(default_factory=dict)
 

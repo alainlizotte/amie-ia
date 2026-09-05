@@ -53,6 +53,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth as auth_mod
+from . import gpu as _gpu
 from .config import AppConfig, get_config
 from .image import helpers as img_helpers
 from .llm.client import LLMClient, Message
@@ -350,11 +351,16 @@ def _hub(sid: str) -> SessionHub:
 
 
 # --------------------------------------------------------------------------- #
-#  Compteur global de tours actifs (déchargement VRAM quand zéro tour).
+#  ARBITRAGE GPU + compteur global de tours actifs (server/gpu.py).
+#  Un tour LLM attend la fin des générations ComfyUI en cours — et
+#  réciproquement — pour ne jamais charger llama.cpp ET ComfyUI en même
+#  temps sur la même carte graphique. Le compteur pilote aussi le
+#  déchargement VRAM du modèle quand plus aucun tour n'est actif.
 # --------------------------------------------------------------------------- #
-_active_turns: int = 0
-_turns_guard = asyncio.Lock()
 _pending_unload: Optional[asyncio.Task] = None
+# Verrou autour du déchargement : un tour qui démarre pendant l'unload
+# (≈1 s) l'attend au lieu de perdre le modèle en cours de route.
+_unload_guard: asyncio.Lock = asyncio.Lock()
 
 
 def _cancel_pending_unload() -> None:
@@ -365,13 +371,37 @@ def _cancel_pending_unload() -> None:
     _pending_unload = None
 
 
+async def _turn_begin() -> None:
+    """Démarre un tour LLM : annule l'unload différé, attend la fin des
+    générations ComfyUI en cours (borné) puis compte le tour."""
+    _cancel_pending_unload()
+    async with _unload_guard:
+        await _gpu.turn_begin()
+
+
+async def _turn_end() -> bool:
+    """Décrémente le compteur de tours ; True s'il ne reste aucun tour actif."""
+    return await _gpu.turn_end()
+
+
+async def _turns_idle() -> bool:
+    """True si aucun tour actif (pour décharger la VRAM hors tour)."""
+    return _gpu.turns_actifs() == 0
+
+
 async def _delayed_unload_task(app: FastAPI, delay_s: float) -> None:
-    """Décharge le modèle après `delay_s` secondes d'inactivité."""
+    """Décharge le modèle après `delay_s` secondes d'inactivité.
+
+    Le garde `_unload_guard` est conservé pendant l'appel réseau d'unload :
+    un tour qui démarre pendant l'unload attend sa fin (≈1 s) au lieu de
+    perdre le modèle en cours de route. La tâche est annulée par
+    `_cancel_pending_unload` si un tour reprend avant l'expiration du délai.
+    """
     global _pending_unload
     try:
         await asyncio.sleep(delay_s)
-        async with _turns_guard:
-            if _active_turns > 0:
+        async with _unload_guard:
+            if _gpu.turns_actifs() > 0:
                 return  # un tour a repris — il reprogrammera l'unload
             _pending_unload = None
             await app.state.client.unload_model()
@@ -379,26 +409,6 @@ async def _delayed_unload_task(app: FastAPI, delay_s: float) -> None:
         pass
     except Exception:
         pass
-
-
-async def _turn_begin() -> None:
-    global _active_turns
-    async with _turns_guard:
-        _cancel_pending_unload()
-        _active_turns += 1
-
-
-async def _turn_end() -> bool:
-    global _active_turns
-    async with _turns_guard:
-        _active_turns = max(0, _active_turns - 1)
-        return _active_turns == 0
-
-
-async def _turns_idle() -> bool:
-    """True si aucun tour actif (pour décharger la VRAM hors tour)."""
-    async with _turns_guard:
-        return _active_turns == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -1578,12 +1588,19 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             )
             messages = [Message(role="system", content=system_text)] + list(hub_hist.history)
 
-            # 6. Génération en streaming (aucun tool exposé au modèle).
-            narration_parts: list[str] = []
-            async for token in app.state.client.stream_chat(messages):
-                narration_parts.append(token)
-                await hub.broadcast({"type": "delta", "text": token})
-            narration = "".join(narration_parts).strip()
+            # 6. Génération (aucun tool exposé au modèle) — avec ou sans
+            # streaming vers le(s) client(s) (llm.stream_to_clients).
+            if cfg.llm.stream_to_clients:
+                narration_parts: list[str] = []
+                async for token in app.state.client.stream_chat(messages):
+                    narration_parts.append(token)
+                    await hub.broadcast({"type": "delta", "text": token})
+                narration = "".join(narration_parts).strip()
+            else:
+                # Réponse complète en un seul bloc (aucun delta pendant la
+                # génération) — le thinking est déjà stripé par le client.
+                res = await app.state.client.chat(messages)
+                narration = res.content.strip()
             # Anti-fuite : coupe toute analyse/instruction interne que le
             # modèle aurait ajoutée en fin de réponse.
             narration = _cut_meta_block(narration)
