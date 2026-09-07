@@ -82,7 +82,7 @@ class PromptBuilder:
     def build_user_card(self, profile: dict[str, Any]) -> str:
         """Ce que le personnage sait de l'utilisateur."""
         u = profile.get("user_info", {}) or {}
-        lignes = ["=== L'UTILISATEUR (la personne en face de toi) ==="]
+        lignes = ["=== L'UTILISATEUR (ton match — la personne en face de toi) ==="]
         nom = u.get("name") or "(pas encore révélé)"
         lignes.append(f"Prénom : {nom}")
         if u.get("preferences"):
