@@ -8,7 +8,7 @@ Architecture :
 - images via ComfyUI (portraits et photos de session) ;
 - mécanique relationnelle 100 % déterministe côté serveur (server/relation/) ;
 - messages proactifs : le personnage écrit le premier après 24 h de silence
-  (1 par jour max) ; sans réponse avant le message suivant → -50 points.
+  (1 par jour max) ; sans réponse avant le message suivant → -15 points.
 
 Le LLM n'appelle AUCUN outil : il incarne uniquement le personnage. Score,
 stades, scénarios, photos et souvenirs sont gérés par le serveur.
@@ -859,7 +859,7 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
 #    dernier échange de l'utilisateur (ou la création de la session) ;
 #  - au plus un message spontané toutes les `proactive_interval_hours` (1/jour) ;
 #  - si l'utilisateur n'a pas répondu au message précédent avant le
-#    suivant : -`proactive_penalty` points de relation (50 par défaut) ;
+#    suivant : -`proactive_penalty` points de relation (15 par défaut) ;
 #  - aucun message proactif au stade « rejet » ;
 #  - la réponse de l'utilisateur (say) remet le compteur à zéro (badge).
 #
