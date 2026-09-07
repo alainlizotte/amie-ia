@@ -1,4 +1,4 @@
-# Tests des messages proactifs (silence 24 h → 1 message/jour, -50 pts si
+# Tests des messages proactifs (silence 24 h → 1 message/jour, -15 pts si
 # sans réponse avant le suivant, badge remis à zéro dès que l'utilisateur
 # répond).
 
@@ -130,7 +130,7 @@ async def test_un_seul_message_par_jour(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_penalite_50_sans_reponse(client, monkeypatch):
+async def test_penalite_15_sans_reponse(client, monkeypatch):
     token = _inscription(client, "proactive3")["token"]
     sid = client.post(
         "/api/sessions", json={"preset_id": "clara_moreau"}, headers=_auth(token)
@@ -149,7 +149,7 @@ async def test_penalite_50_sans_reponse(client, monkeypatch):
 
     profile = _get_profile(sid)
     assert profile["unanswered_messages"] == 2
-    assert profile["relationship_score"] == 100 - 50  # -50 points
+    assert profile["relationship_score"] == 100 - 15  # -15 points
 
 
 @pytest.mark.asyncio
@@ -212,6 +212,13 @@ async def test_aucun_message_au_stade_rejet(client):
     await _proactive_for_session(sid)
     profile = _get_profile(sid)
     assert profile["unanswered_messages"] == 1  # inchangé
+    assert profile["relationship_score"] == 50  # aucune pénalité au stade rejet
+    # Aucun message envoyé par le personnage (stade rejet → silence total).
+    import json as _json
+    hist_path = Path(_data_dir()) / f"chat_{sid}.json"
+    if hist_path.exists():
+        hist = _json.loads(hist_path.read_text(encoding="utf-8"))
+        assert not any(m["role"] == "assistant" for m in hist)
 
 
 @pytest.mark.asyncio

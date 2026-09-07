@@ -80,7 +80,7 @@ class RelationConfig:
     proactive_enabled: bool = True
     proactive_after_hours: float = 24.0   # silence requis avant initiative
     proactive_interval_hours: float = 24.0  # délai min entre deux initiatives (1/jour)
-    proactive_penalty: int = 50         # pénalité si nouveau message sans réponse au précédent
+    proactive_penalty: int = 15         # pénalité si nouveau message sans réponse au précédent
     proactive_check_seconds: int = 300  # période de la boucle de vérification
     proactive_first_delay_seconds: int = 30  # délai avant la première vérification
 
