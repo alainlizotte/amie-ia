@@ -27,4 +27,9 @@ Thumbs.db
 # Modèles LLM locaux (trop volumineux — servis par llamacpp)
 models/
 models-embed/
-server/data/
+server/data/*
+# Exception : portraits originaux des personnages prédéfinis (assets suivis,
+# servent de cache partagé à toute nouvelle session — voir _preset_portrait_cache).
+!server/data/preset_portraits/
+server/data/preset_portraits/*
+!server/data/preset_portraits/*.png
