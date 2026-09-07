@@ -28,7 +28,18 @@ class TestRegressionWordBoundaries:
 
     def test_annuaire_ne_declenche_pas_nul(self):
         # Aucun mot-clé neutre ni négatif dans cette phrase.
-        assert compute_delta("je cherche dans l'annuaire", "...", "neutre") == 0
+        assert compute_delta("je cherche dans l'annuaire", "...", "neutre") == 1
+
+
+class TestNeutre:
+    """Un message neutre fait toujours progresser d'au moins 1 point."""
+
+    def test_message_neutre_jamais_zero(self):
+        assert compute_delta("je cherche dans l'annuaire", "...", "neutre") == 1
+        assert compute_delta("ok je vois ce que tu veux dire", "...", "chaleureux") == 1
+
+    def test_question_neutre_vaut_un_point(self):
+        assert compute_delta("quel menu recommandes-tu ?", "...", "reserve") == 1
 
 
 class TestInsultes:
@@ -47,7 +58,7 @@ class TestInsultes:
 
 class TestPositifs:
     def test_compliment_tu_es_adjectif(self):
-        assert compute_delta("Tu es vraiment passionnante", "...", "froid") >= 6
+        assert compute_delta("Tu es vraiment passionnante", "...", "froid") >= 8
 
     def test_mots_positifs_cumules_plafonnes(self):
         d = compute_delta(
@@ -57,11 +68,11 @@ class TestPositifs:
         assert d == 16  # clamp delta_max
 
     def test_excuses(self):
-        assert compute_delta("pardon, je n'aurais pas dû dire ça", "...", "rejet") >= 4
+        assert compute_delta("pardon, je n'aurais pas dû dire ça", "...", "rejet") >= 6
 
     def test_engagement_message_long(self):
         long_msg = "j'aime bien discuter avec toi " * 10  # > 200 chars
-        assert compute_delta(long_msg, "...", "neutre") >= 4
+        assert compute_delta(long_msg, "...", "neutre") >= 6
 
 
 class TestInsistance:
@@ -70,8 +81,8 @@ class TestInsistance:
             assert compute_delta("envoie une photo de toi", "...", st) <= -6
 
     def test_toleree_au_stade_proche_pas_de_malus_specifique(self):
-        # Au stade proche, pas de malus d'insistance (peut rester neutre).
-        assert compute_delta("envoie une photo de toi", "...", "proche") == 0
+        # Au stade proche, pas de malus d'insistance (message neutre → plancher +1).
+        assert compute_delta("envoie une photo de toi", "...", "proche") == 1
 
 
 class TestClamp:
