@@ -41,7 +41,7 @@ for f in (f"chat_{SID}.json", f"session_{SID}.json"):
     shutil.copy(ROOT / "server" / "data" / f, TMP / "data" / f)
 
 llm_url = "http://127.0.0.1:8082/v1"
-llm_model = "gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0"
+llm_model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M"
 
 (TMP / "config.yaml").write_text(
     f"""

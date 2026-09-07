@@ -1,7 +1,8 @@
 """Client LLM — endpoint OpenAI-compatible (llama.cpp / Ollama).
 
 Appels non-streaming et
-streaming SSE, strip des blocs thinking Gemma 4, chargement/déchargement
+streaming SSE, strip des blocs thinking (Gemma 4 / Qwen), normalisation des
+messages pour les templates strictes (Qwen 3.5), chargement/déchargement
 du modèle en VRAM (router llama.cpp) avec retry sur HTTP 500 pour survivre
 à la contention VRAM avec ComfyUI.
 """
@@ -23,16 +24,30 @@ _log = logging.getLogger("amie.llm.client")
 
 
 # --------------------------------------------------------------------------- #
-#  Thinking stripping (Gemma 4 utilise <|channel>thought...<channel|>)
+#  Thinking stripping (Gemma 4 : <|channel>thought…<channel|> ;
+#  Qwen : <think>…</think>)
 # --------------------------------------------------------------------------- #
 _THINK_RE = re.compile(r"<\|channel>thought\b.*?<channel\|>", re.DOTALL)
+_THINK_QWEN_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+# Bloc thinking Qwen non refermé (coupe en fin de génération) : strip jusqu'à EOF.
+_THINK_QWEN_OPEN_RE = re.compile(r"<think>.*\Z", re.DOTALL)
 
 
 def _strip_thinking(text: str) -> str:
-    """Supprime les blocs de réflexion Gemma 4 du texte de réponse."""
+    """Supprime les blocs de réflexion (Gemma 4 / Qwen) du texte de réponse."""
     if not text:
         return text
-    return _THINK_RE.sub("", text).strip()
+    out = _THINK_RE.sub("", text)
+    out = _THINK_QWEN_RE.sub("", out)
+    out = _THINK_QWEN_OPEN_RE.sub("", out)
+    return out.strip()
+
+
+# Débuts de bloc thinking : (marqueur complet, longueur mini reconnaissable).
+_THINK_STARTS: tuple[tuple[str, str], ...] = (
+    ("<|channel>thought", "<channel|>"),  # Gemma 4
+    ("<think>", "</think>"),              # Qwen
+)
 
 
 def _safe_split(buf: str) -> tuple[str, str]:
@@ -40,12 +55,49 @@ def _safe_split(buf: str) -> tuple[str, str]:
 
     Renvoie (texte_sûre, reste_à_analyser).
     """
-    markers = ("<|channel>tho", "<|channel>th", "<|channel>", "<|chan", "<|ch", "<|c", "<|")
+    markers = [
+        "<|channel>tho", "<|channel>th", "<|channel>", "<|chan", "<|ch", "<|c", "<|",
+        "<think", "<thin", "<thi", "<th", "<t",
+    ]
     for m in markers:
         if buf.endswith(m):
             safe = buf[: -len(m)]
             return safe, buf[-len(m):]
     return buf, ""
+
+
+def _normaliser_messages(messages: list[Message]) -> list[Message]:
+    """Rend la conversation compatible avec les templates strictes (Qwen 3.5).
+
+    La template Jinja du Qwen 3.5 lève une exception dès qu'un message
+    `role="system"` n'est pas à l'index 0 (« System message must be at the
+    beginning »). Or des messages `system` hors tête peuvent exister :
+    historiques persistés sur disque (`chat_*.json` d'anciennes versions),
+    consignes injectées en cours de conversation…
+
+    Règle appliquée (sans modifier la liste passée en entrée) : tout message
+    `system` hors index 0 → transformé en `role="user"` (le texte reste
+    présent dans le contexte, seul le rôle change).
+    """
+    if not messages:
+        return messages
+    out: list[Message] = []
+    for i, m in enumerate(messages):
+        if m.role == "system" and i > 0:
+            content = m.content or ""
+            out.append(
+                Message(
+                    role="user",
+                    content=(
+                        "⚠️ Consigne du système (contexte) : " + content
+                        if content
+                        else "⚠️ (Consigne du système vide.)"
+                    ),
+                )
+            )
+        else:
+            out.append(m)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -93,6 +145,7 @@ class LLMClient:
     ) -> ChatResult:
         """Appel non-streaming (extraction de souvenirs, messages spontanés)."""
         await self.ensure_model_loaded()
+        messages = _normaliser_messages(messages)
         payload: dict[str, Any] = {
             "model": self.cfg.model,
             "messages": [m.to_openai() for m in messages],
@@ -101,6 +154,11 @@ class LLMClient:
             "max_tokens": max_tokens if max_tokens is not None else self.cfg.max_tokens,
             "stream": False,
         }
+        # Qwen 3.5 : désactive le thinking via la template Jinja
+        # (`enable_thinking=false`), sinon le modèle raisonne dans <think>…</think>
+        # avant de répondre (lenteur + budget tokens consommé par le raisonnement).
+        if not self.cfg.think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         if self.cfg.options:
             payload["options"] = dict(self.cfg.options)
 
@@ -141,6 +199,7 @@ class LLMClient:
     ) -> AsyncIterator[str]:
         """Streaming SSE — yield les delta-tokens au fur et à mesure."""
         await self.ensure_model_loaded()
+        messages = _normaliser_messages(messages)
         payload: dict[str, Any] = {
             "model": self.cfg.model,
             "messages": [m.to_openai() for m in messages],
@@ -149,13 +208,19 @@ class LLMClient:
             "max_tokens": self.cfg.max_tokens,
             "stream": True,
         }
+        if not self.cfg.think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         if self.cfg.options:
             payload["options"] = dict(self.cfg.options)
 
         async with self._client.stream("POST", "/chat/completions", json=payload) as resp:
             resp.raise_for_status()
+            # Buffer pour striper les blocs thinking en streaming (Gemma 4 ou
+            # Qwen). Les balises arrivent chunk par chunk : on n'émet un
+            # fragment que lorsqu'il ne peut plus être le début d'une balise.
             think_buf = ""
             in_think = False
+            think_end = ""          # balise fermante du bloc courant
             async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
@@ -174,19 +239,29 @@ class LLMClient:
                         continue
                     think_buf += content
                     if in_think:
-                        idx = think_buf.find("<channel|>")
+                        # Chercher la fin du bloc thinking courant
+                        idx = think_buf.find(think_end)
                         if idx >= 0:
                             in_think = False
-                            think_buf = think_buf[idx + len("<channel|>"):]
+                            think_buf = think_buf[idx + len(think_end):]
                         continue
-                    think_idx = think_buf.find("<|channel>thought")
-                    if think_idx >= 0:
+                    # Chercher le début d'un bloc thinking (le plus proche gagne)
+                    best_idx, best_end = -1, ""
+                    for start, end in _THINK_STARTS:
+                        i = think_buf.find(start)
+                        if i >= 0 and (best_idx < 0 or i < best_idx):
+                            best_idx, best_end = i, end
+                    if best_idx >= 0:
                         in_think = True
-                        before = think_buf[:think_idx]
-                        think_buf = think_buf[think_idx:]
+                        think_end = best_end
+                        # Yield le contenu avant le thinking
+                        before = think_buf[:best_idx]
+                        think_buf = think_buf[best_idx:]
                         if before:
                             yield before
                         continue
+                    # Pas de thinking : yield le contenu sauf le dernier fragment
+                    # (qui pourrait être le début d'une balise)
                     safe, think_buf = _safe_split(think_buf)
                     if safe:
                         yield safe
