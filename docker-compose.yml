@@ -57,7 +57,7 @@ services:
   #   -c 32768           : taille du contexte
   #   -n 8192            : max_tokens (plafond de génération par réponse)
   #   -ctk q8_0 -ctv q8_0 : KV cache K/V en 8-bit
-  #   --jinja            : template Jinja natif Gemma
+  #   --jinja            : template Jinja native du modèle (Gemma 4 / Qwen 3.5)
   #   --flash-attn on    : Flash Attention (réduit VRAM KV cache)
   #   --sleep-idle-seconds 300 : unload après 5 min d'inactivité
   llamacpp:

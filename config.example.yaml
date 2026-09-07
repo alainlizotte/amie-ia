@@ -8,11 +8,12 @@ llm:
   base_url: http://llamacpp:8080/v1
   api_key: none
   model: gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0
+  # Qwen 3.5 (uncensored) : model: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M
   temperature: 1.0
   top_p: 0.95
   max_context_tokens: 16384
   max_tokens: 8192        # plafond de génération par réponse (llama.cpp -n)
-  think: false            # désactive le thinking (Gemma 4)
+  think: false            # désactive le thinking (Gemma 4 ; Qwen : enable_thinking=false)
   # Déchargement du modèle après le tour :
   #   true  = comportement historique : la VRAM est libérée dès la fin du
   #           dernier tour (partage du GPU avec ComfyUI).
@@ -59,7 +60,7 @@ relation:
   proactive_enabled: true
   proactive_after_hours: 24.0     # silence requis avant sa première initiative
   proactive_interval_hours: 24.0  # délai min entre deux initiatives (1 par jour)
-  proactive_penalty: 50           # -points si message envoyé sans réponse au précédent
+  proactive_penalty: 15           # -points si message envoyé sans réponse au précédent
   proactive_check_seconds: 300    # période de la boucle de vérification
   proactive_first_delay_seconds: 30
 
