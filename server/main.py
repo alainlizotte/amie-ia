@@ -19,6 +19,10 @@ Endpoints REST :
 - POST /api/auth/connexion      → connecte un compte existant → token Bearer
 - GET  /api/auth/moi            → identité du porteur du token
 - GET  /api/presets             → personnages prédéfinis (pour le GUI)
+- GET  /api/mon-profil          → fiche « dating app » de l'utilisateur (auth)
+- PUT  /api/mon-profil          → met à jour la fiche (auth)
+- POST /api/mon-profil/photo    → upload photo + analyse vision (auth)
+- GET  /api/mon-profil/photo    → photo de profil (auth)
 - GET  /api/sessions            → sessions de l'utilisateur (auth requise)
 - POST /api/sessions            → crée une session (+ génération du portrait)
 - GET  /api/sessions/{id}       → profil public d'une session
@@ -69,6 +73,7 @@ from .relation.memory import (
 from .relation.scoring import apply_time_decay, compute_delta
 from .relation.state import RelationState
 from .relation.stages import compute_stage
+from . import user_profile as UP
 
 logging.basicConfig(
     level=logging.INFO,
@@ -508,6 +513,131 @@ async def list_presets() -> dict[str, Any]:
     return {"characters": chars}
 
 
+# --------------------------------------------------------------------------- #
+#  Mon profil — la fiche « dating app » de l'utilisateur (mêmes catégories
+#  que les personnages). Injectée dans le prompt : le personnage sait avec
+#  qui il parle. Photo analysée par le modèle vision (mmproj).
+# --------------------------------------------------------------------------- #
+def _profil_public_utilisateur(utilisateur: str) -> dict[str, Any]:
+    """Profil GET-able : champs + présence photo (URL authentifiée)."""
+    profil = UP.charger_profil(_data_dir(), utilisateur)
+    a_photo = UP.photo_path(_data_dir(), utilisateur) is not None
+    return {
+        "profil": {k: profil.get(k, "") for k in UP.CHAMPS},
+        "photo_description": profil.get("photo_description", ""),
+        "photo_erreur": profil.get("photo_erreur", ""),
+        "photo_url": "/api/mon-profil/photo" if a_photo else "",
+    }
+
+
+@app.get("/api/mon-profil")
+async def get_mon_profil(
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    return _profil_public_utilisateur(utilisateur)
+
+
+@app.put("/api/mon-profil")
+async def put_mon_profil(
+    payload: dict[str, Any],
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    """Met à jour les champs de la fiche (liste blanche, autres ignorés)."""
+    champs = {k: v for k, v in (payload or {}).items() if k in UP.CHAMPS}
+    UP.sauver_profil(_data_dir(), utilisateur, champs)
+    return _profil_public_utilisateur(utilisateur)
+
+
+@app.post("/api/mon-profil/photo")
+async def post_photo_profil(
+    payload: dict[str, Any],
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    """Upload d'une photo de profil (data-URL base64) + analyse vision.
+
+    La photo est stockée immédiatement ; la description par le modèle vision
+    tourne en arrière-plan (chargement GPU possible) — le client interroge
+    GET /api/mon-profil jusqu'à ce que `photo_description` soit remplie.
+    """
+    data_url = payload.get("data") or ""
+    try:
+        UP.sauver_photo(_data_dir(), utilisateur, data_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    UP.purger_analyse_photo(_data_dir(), utilisateur)
+
+    llm = getattr(app.state, "client", None)
+    if llm is None:
+        return {"ok": True, "analyse_en_cours": False}
+    asyncio.create_task(_analyser_photo_profil(utilisateur))
+    return {"ok": True, "analyse_en_cours": True}
+
+
+async def _analyser_photo_profil(utilisateur: str) -> None:
+    """Analyse vision de la photo de profil (tâche de fond, best effort).
+
+    Génère une description factuelle et bienveillante rangée dans
+    `photo_description` — injectée dans la fiche vue par le personnage.
+    En cas d'échec (modèle sans vision, backend injoignable), `photo_erreur`
+    est renseigné et l'utilisateur peut saisir son apparence manuellement.
+    """
+    llm = getattr(app.state, "client", None)
+    if llm is None:
+        return
+    chemin = UP.photo_path(_data_dir(), utilisateur)
+    if chemin is None:
+        return
+    try:
+        import base64 as _b64
+        brut = chemin.read_bytes()
+        suffixe = chemin.suffix.lower()
+        mime = (
+            "image/png" if suffixe == ".png"
+            else "image/webp" if suffixe == ".webp"
+            else "image/jpeg"
+        )
+        data_url = f"data:{mime};base64,{_b64.b64encode(brut).decode('ascii')}"
+        prompt = (
+            "Voici la photo de profil d'une personne sur une application de "
+            "rencontre. Décris son apparence physique de façon factuelle et "
+            "bienveillante, en 2 à 4 phrases : traits généraux, cheveux, "
+            "tenue vestimentaire, ambiance générale de la photo. Ne tente "
+            "pas d'identifier la personne et n'invente rien qui ne soit pas "
+            "visible."
+        )
+        desc = await asyncio.wait_for(
+            llm.decrire_image(data_url, prompt, max_tokens=280),
+            timeout=300.0,
+        )
+        if not desc:
+            raise ValueError("description vide")
+        UP.sauver_profil(_data_dir(), utilisateur, {"photo_description": desc})
+        _log.info("[profil] photo analysée pour %s (%d car.)", utilisateur, len(desc))
+    except Exception as e:  # noqa: BLE001
+        _log.warning("[profil] analyse vision impossible pour %s : %s", utilisateur, e)
+        UP.sauver_profil(_data_dir(), utilisateur, {
+            "photo_erreur": (
+                "Analyse de la photo impossible (modèle sans vision ?). "
+                "Décris ton apparence manuellement si tu le souhaites."
+            )
+        })
+
+
+@app.get("/api/mon-profil/photo")
+async def get_photo_profil(
+    utilisateur: str = Depends(utilisateur_courant),
+):
+    chemin = UP.photo_path(_data_dir(), utilisateur)
+    if chemin is None:
+        raise HTTPException(status_code=404, detail="Aucune photo de profil.")
+    mime = (
+        "image/png" if chemin.suffix.lower() == ".png"
+        else "image/webp" if chemin.suffix.lower() == ".webp"
+        else "image/jpeg"
+    )
+    return FileResponse(chemin, media_type=mime, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/sessions")
 async def list_sessions(
     utilisateur: str = Depends(utilisateur_courant),
@@ -595,6 +725,11 @@ async def create_session(
     })
     profile["character"] = character
     ui = payload.get("user_info") or {}
+    if not (ui.get("name") or "").strip():
+        # Pré-remplit depuis la fiche « dating app » de l'utilisateur.
+        up = UP.charger_profil(_data_dir(), utilisateur)
+        if up.get("name"):
+            ui = {"name": up.get("name", ""), "preferences": up.get("preferences", "")}
     profile["user_info"] = {
         "name": (ui.get("name") or "").strip(),
         "preferences": (ui.get("preferences") or "").strip(),
@@ -1236,8 +1371,10 @@ async def _generate_proactive_message(
         "Ta réponse visible est UNIQUEMENT ton message texto.]"
     )
 
+    user_key = (profile.get("meta", {}) or {}).get("user", "")
+    user_profil = UP.charger_profil(_data_dir(), user_key) if user_key else {}
     system_text = app.state.prompt_builder.build_system_message(
-        profile, [], None, extra_directive=directive,
+        profile, [], None, extra_directive=directive, user_profil=user_profil,
     )
 
     # Contexte : derniers échanges, PUIS un tour « user » de cadrage qui
@@ -1582,9 +1719,11 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 except Exception as e:                           # noqa: BLE001
                     _log.warning("rappel de souvenirs échoué (ignoré) : %s", e)
 
-            # 5. Prompt système complet + historique.
+            # 5. Prompt système complet + historique (+ fiche de l'utilisateur).
+            user_key = (profile.get("meta", {}) or {}).get("user", "")
+            user_profil = UP.charger_profil(_data_dir(), user_key) if user_key else {}
             system_text = app.state.prompt_builder.build_system_message(
-                profile, memories, pending
+                profile, memories, pending, user_profil=user_profil
             )
             messages = [Message(role="system", content=system_text)] + list(hub_hist.history)
 

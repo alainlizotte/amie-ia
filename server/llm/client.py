@@ -192,6 +192,45 @@ class LLMClient:
         )
 
     # ------------------------------------------------------------------ #
+    async def decrire_image(
+        self,
+        image_data_url: str,
+        prompt: str,
+        max_tokens: int = 300,
+    ) -> str:
+        """Analyse vision : décrire une image via le modèle multimodal.
+
+        `image_data_url` : data-URL `data:image/…;base64,…`. Requiert que le
+        serveur llama.cpp ait chargé un projeteur (mmproj) avec le modèle —
+        sinon l'appel échoue et l'appelant doit gérer l'erreur.
+
+        Renvoie la description texte (thinking strippé) ; lève en cas d'échec.
+        """
+        await self.ensure_model_loaded()
+        payload: dict[str, Any] = {
+            "model": self.cfg.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ],
+                }
+            ],
+            "temperature": 0.3,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if not self.cfg.think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        resp = await self._client.post("/chat/completions", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        msg = data["choices"][0].get("message", {})
+        return _strip_thinking(msg.get("content", "") or "").strip()
+
+    # ------------------------------------------------------------------ #
     async def stream_chat(
         self,
         messages: list[Message],

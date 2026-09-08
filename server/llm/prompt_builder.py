@@ -22,6 +22,25 @@ from ..config import AppConfig
 from ..relation.stages import STAGE_LABELS, get_stage_instruction
 
 
+JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+MOIS_FR = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def saison_fr(dt: datetime) -> str:
+    """Saison (hémisphère nord) d'après les équinoxes/solstices approximatifs."""
+    m, j = dt.month, dt.day
+    if (m == 3 and j >= 20) or m in (4, 5) or (m == 6 and j < 21):
+        return "printemps"
+    if (m == 6 and j >= 21) or m in (7, 8) or (m == 9 and j < 22):
+        return "été"
+    if (m == 9 and j >= 22) or m in (10, 11) or (m == 12 and j < 21):
+        return "automne"
+    return "hiver"
+
+
 # --------------------------------------------------------------------------- #
 class PromptBuilder:
     """Construit le message système injecté à chaque appel au LLM."""
@@ -79,14 +98,57 @@ class PromptBuilder:
         return "\n".join(lignes)
 
     # ------------------------------------------------------------------ #
-    def build_user_card(self, profile: dict[str, Any]) -> str:
-        """Ce que le personnage sait de l'utilisateur."""
-        u = profile.get("user_info", {}) or {}
+    def build_user_card(
+        self,
+        profile: dict[str, Any],
+        user_profil: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Ce que le personnage sait de l'utilisateur.
+
+        La fiche riche vient du profil « dating app » rempli par l'utilisateur
+        (server/user_profile.py — mêmes catégories que les personnages) ;
+        `user_info` de la session (legacy) sert de filet si le profil est vide.
+        Les catégories non remplies sont omises : le personnage ne connaît que
+        ce que son match a partagé — comme sur une vraie application.
+        """
+        up = user_profil or {}
+        ui = profile.get("user_info", {}) or {}
+
+        def val(*cles: str) -> str:
+            for c in cles:
+                v = str(up.get(c) or "").strip()
+                if v:
+                    return v
+            return ""
+
         lignes = ["=== L'UTILISATEUR (ton match — la personne en face de toi) ==="]
-        nom = u.get("name") or "(pas encore révélé)"
-        lignes.append(f"Prénom : {nom}")
-        if u.get("preferences"):
-            lignes.append(f"Préférences annoncées : {u['preferences']}")
+        prenom = val("name") or str(ui.get("name") or "").strip()
+        lignes.append(f"Prénom : {prenom or '(pas encore révélé)'}")
+        if up.get("age"):
+            lignes.append(f"Âge : {up['age']}")
+        if up.get("gender"):
+            lignes.append(f"Genre : {'femme' if up['gender'] == 'F' else 'homme'}")
+        if up.get("title"):
+            lignes.append(f"Surnom : {up['title']}")
+        apparance = val("photo_description", "appearance")
+        if apparance:
+            src = "d'après sa photo de profil" if up.get("photo_description") else ""
+            lignes.append(f"Apparence {src}: {apparance}".replace("  ", " ").strip())
+        if up.get("personality"):
+            lignes.append(f"Personnalité : {up['personality']}")
+        if up.get("occupation"):
+            lignes.append(f"Métier / études : {up['occupation']}")
+        if up.get("interests"):
+            lignes.append(f"Centres d'intérêt : {up['interests']}")
+        if up.get("histoire"):
+            lignes.append(f"Son histoire : {up['histoire']}")
+        if up.get("parcours_amoureux"):
+            lignes.append(f"Situation amoureuse : {up['parcours_amoureux']}")
+        prefs = val("preferences") or str(ui.get("preferences") or "").strip()
+        if prefs:
+            lignes.append(f"Ce qu'il/elle recherche : {prefs}")
+        if len(lignes) == 2 and not prenom:
+            lignes.append("(Profil vide — apprends à le/la connaître par la conversation.)")
         return "\n".join(lignes)
 
     # ------------------------------------------------------------------ #
@@ -167,11 +229,22 @@ class PromptBuilder:
             else "l'après-midi" if now.hour < 18
             else "la soirée"
         )
-        jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        jour_mois = f"{now.day}er" if now.day == 1 else str(now.day)
+        date_fr = (
+            f"{JOURS_FR[now.weekday()]} {jour_mois} "
+            f"{MOIS_FR[now.month - 1]} {now.year}"
+        )
+        saison = saison_fr(now)
+        article_saison = "au printemps" if saison == "printemps" else f"en {saison}"
         return (
-            "=== CONTEXTE TEMPOREL ===\n"
-            f"Nous sommes {jours[now.weekday()]} et c'est {moment} "
-            f"({now.strftime('%H:%M')}). Tiens-en compte naturellement."
+            "=== CONTEXTE TEMPOREL (heure et date réelles de l'utilisateur) ===\n"
+            f"Nous sommes le {date_fr}, il est {now.strftime('%H:%M')} — c'est "
+            f"{moment}, nous sommes {article_saison}.\n"
+            "Adapte ton discours au moment de la journée (ex. « bonjour » le "
+            "matin, « bonsoir » en soirée, « tu dors à cette heure ? » la nuit) "
+            "et à la saison ou à la période de l'année (météo typique, fêtes, "
+            "vacances, rentrée…). Tu connais déjà l'heure et la date : ne les "
+            "demande JAMAIS à l'utilisateur."
         )
 
     # ------------------------------------------------------------------ #
@@ -181,16 +254,20 @@ class PromptBuilder:
         memories: list[str],
         pending_event: Optional[dict[str, Any]],
         extra_directive: str = "",
+        user_profil: Optional[dict[str, Any]] = None,
     ) -> str:
         """Assemble le message système complet du tour.
 
         `extra_directive` : consigne supplémentaire placée en tête (utilisée
         pour les messages spontanés du personnage — voir main.py).
+        `user_profil` : fiche « dating app » de l'utilisateur (server/
+        user_profile.py) — injectée pour que le personnage sache avec qui
+        il parle.
         """
         parts = [
             self.persona_prompt(),
             self.build_character_card(profile),
-            self.build_user_card(profile),
+            self.build_user_card(profile, user_profil),
             self.build_relation_block(profile),
             self.AUTOMATISATIONS_NOTE,
             self.build_time_block(),

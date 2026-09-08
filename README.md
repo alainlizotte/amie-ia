@@ -55,6 +55,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
+| 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 | 📱 **Mobile** | Panneau d'informations accessible en superposition via le bouton ⓘ |
@@ -73,7 +74,8 @@ server/
   auth.py        Comptes PBKDF2 + tokens Bearer HMAC
   config.py      Chargement YAML (config/config.yaml)
   relation/      Score, stades, scénarios, presets, souvenirs (déterministe)
-  llm/           Client llama.cpp (streaming SSE) + prompt builder
+  llm/           Client llama.cpp (streaming SSE, vision) + prompt builder
+  user_profile.py  Fiche « dating app » de l'utilisateur (injectée au prompt)
   image/         ComfyUI : portrait auto + photos gated par stade
   prompts/       Persona du personnage (SystemPrompt_Compagnon.md)
 data/
@@ -115,6 +117,14 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   et ne connaît de vous que la conversation et votre profil. Il ne rompt
   jamais son rôle : pas de référence à l'IA, au système ou aux mécaniques
   de jeu.
+- **Mon profil (utilisateur)** : remplissez votre fiche via le bouton
+  « 👤 Mon profil » — mêmes catégories que les personnages (prénom, âge,
+  apparence, personnalité, métier, intérêts, histoire, situation amoureuse,
+  recherches). Elle est injectée dans chaque prompt : le personnage connaît
+  son match. Photo optionnelle : uploadée en base64, analysée par le modèle
+  vision Qwen (mmproj chargé par llama.cpp), et la description générée
+  complète la fiche (saisie manuelle possible si le modèle n'a pas de
+  vision).
 - **Souvenirs** : extraction périodique (tous les 10 tours) + rappel
   sémantique top-k.
 - **Photos** : portrait généré automatiquement à la création de session ;
@@ -221,6 +231,9 @@ Téléchargez-les sur Hugging Face et placez-les aux emplacements indiqués :
 | POST | `/api/auth/connexion` | Connexion → token Bearer (30 jours) |
 | GET | `/api/auth/moi` | Identité du porteur du token |
 | GET | `/api/presets` | Personnages prédéfinis |
+| GET/PUT | `/api/mon-profil` | Fiche « dating app » de l'utilisateur (auth Bearer) |
+| POST | `/api/mon-profil/photo` | Upload photo (base64) + analyse vision (auth) |
+| GET | `/api/mon-profil/photo` | Photo de profil (auth) |
 | GET/POST | `/api/sessions` | Liste / création de rencontre (auth Bearer) |
 | GET/DELETE | `/api/sessions/{id}` | Profil public / suppression |
 | GET | `/api/sessions/{id}/photos` | Album photo |

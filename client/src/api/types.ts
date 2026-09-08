@@ -44,6 +44,27 @@ export interface PresetCharacter {
   occupation: string;
 }
 
+/** Fiche « dating app » de l'utilisateur (mêmes catégories que les personnages). */
+export interface MonProfil {
+  profil: {
+    name: string;
+    age: string;
+    gender: string;
+    title: string;
+    occupation: string;
+    interests: string;
+    appearance: string;
+    personality: string;
+    histoire: string;
+    parcours_amoureux: string;
+    preferences: string;
+  };
+  photo_description: string;
+  photo_erreur: string;
+  /** URL authentifiée de la photo ("" si aucune) — à charger via blob. */
+  photo_url: string;
+}
+
 export interface PhotoEntry {
   url: string;
   kind: "portrait" | "photo";

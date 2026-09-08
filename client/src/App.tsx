@@ -28,6 +28,12 @@ export default function App() {
         </div>
         {user && (
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/profil")}
+              className="rounded-md border border-rose-800/60 px-3 py-1 text-sm text-rose-200 transition hover:bg-rose-900/40"
+            >
+              👤 Mon profil
+            </button>
             <span className="text-sm text-rose-200/70">{user}</span>
             <button
               onClick={logout}
