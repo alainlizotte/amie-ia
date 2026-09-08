@@ -3,7 +3,7 @@
 // dans chaque requête ; un 401 déclenche la déconnexion forcée côté UI
 // (callback onNonAuthentifie).
 
-import type { PhotoEntry, PresetCharacter, PublicProfile, SessionSummary } from "./types";
+import type { MonProfil, PhotoEntry, PresetCharacter, PublicProfile, SessionSummary } from "./types";
 
 const API = "/api";
 const TOKEN_KEY = "amie.token";
@@ -152,4 +152,42 @@ export async function apiPhotos(sid: string): Promise<{ photos: PhotoEntry[] }> 
     { headers: entetes() },
   );
   return jsonOrThrow(res);
+}
+
+// --------------------------------------------------------------------------- //
+//  Mon profil « dating app » — fiche de l'utilisateur + photo (vision).
+// --------------------------------------------------------------------------- //
+export async function apiMonProfil(): Promise<MonProfil> {
+  const res = await fetch(`${API}/mon-profil`, { headers: entetes() });
+  return jsonOrThrow(res);
+}
+
+export async function apiSauverMonProfil(
+  profil: MonProfil["profil"],
+): Promise<MonProfil> {
+  const res = await fetch(`${API}/mon-profil`, {
+    method: "PUT",
+    headers: entetes({ "Content-Type": "application/json" }),
+    body: JSON.stringify(profil),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function apiUploadPhotoProfil(
+  dataUrl: string,
+): Promise<{ ok: boolean; analyse_en_cours: boolean }> {
+  const res = await fetch(`${API}/mon-profil/photo`, {
+    method: "POST",
+    headers: entetes({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ data: dataUrl }),
+  });
+  return jsonOrThrow(res);
+}
+
+/** Charge la photo de profil (auth Bearer) → URL objet pour <img>. */
+export async function apiPhotoProfilBlob(): Promise<string> {
+  const res = await fetch(`${API}/mon-profil/photo`, { headers: entetes() });
+  if (!res.ok) return "";
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }

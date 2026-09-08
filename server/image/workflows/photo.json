@@ -154,7 +154,7 @@
     "130":  {
                 "inputs":  {
                                "lora_name":  "Unchained-XXX.safetensors",
-                               "strength_model":  0.45,
+                               "strength_model":  1,
                                "strength_clip":  1,
                                "model":  [
                                              "110",

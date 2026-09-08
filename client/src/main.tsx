@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { SessionPage } from "./pages/SessionPage";
 import { AlbumPage } from "./pages/AlbumPage";
+import { MonProfilPage } from "./pages/MonProfilPage";
 import { onNonAuthentifie, setToken } from "./api/rest";
 import { useAmie } from "./store";
 
@@ -71,6 +72,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               element={
                 <RequireUser>
                   <AlbumPage />
+                </RequireUser>
+              }
+            />
+            <Route
+              path="profil"
+              element={
+                <RequireUser>
+                  <MonProfilPage />
                 </RequireUser>
               }
             />
