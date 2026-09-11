@@ -9,6 +9,8 @@ llm:
   api_key: none
   model: gemma-4-E4B-it-qat-q4_0-unquantized-heretic-Q4_0
   # Qwen 3.5 (uncensored) : model: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M
+  #   + échantillonnage recommandé (non-thinking) : temperature 0.7, top_p 0.8,
+  #     options: {top_k: 20} (fusionnées à la racine du payload).
   temperature: 1.0
   top_p: 0.95
   max_context_tokens: 16384

@@ -50,16 +50,26 @@ services:
   # Sans GPU NVIDIA : remplacer l'image `server-cuda` par `server` et
   # retirer la section deploy.resources (inférence CPU, plus lente).
   #
-  # Flags :
-  #   -ngl ${LLAMACPP_NGL} (99 par défaut) : nombre de couches sur GPU
-  #           99 > nb de couches de gemma-4-E4B → modèle chargé EN ENTIER en VRAM
-  #           (queue si la VRAM manque). Réduire (ex. 32) pour partager avec ComfyUI.
-  #   -c 32768           : taille du contexte
-  #   -n 8192            : max_tokens (plafond de génération par réponse)
-  #   -ctk q8_0 -ctv q8_0 : KV cache K/V en 8-bit
-  #   --jinja            : template Jinja native du modèle (Gemma 4 / Qwen 3.5)
-  #   --flash-attn on    : Flash Attention (réduit VRAM KV cache)
-  #   --sleep-idle-seconds 300 : unload après 5 min d'inactivité
+# Flags :
+#   -ngl ${LLAMACPP_NGL} (99 par défaut) : nombre de couches sur GPU
+#           99 > nb de couches → modèle chargé EN ENTIER en VRAM.
+#           Réduire (ex. 32) pour partager avec ComfyUI.
+#   -c 16384           : contexte TOTAL (pool KV unifié). 32k ne tient pas en
+#           VRAM avec un 9B Q5_K_M sur 8 Go → débordement RAM système et
+#           effondrement de vitesse (1-2 tok/s). 16k ≈ 1,2 Go de KV (q8_0).
+#   -n 4096            : max_tokens (aligné sur llm.max_tokens de config.yaml)
+#   -np 1              : 1 slot → chaque requête dispose du contexte complet
+#           (l'app sérialise les tours de toute façon).
+#   -ctk q8_0 -ctv q8_0 : KV cache K/V en 8-bit (flash-attn requis, actif)
+#   --jinja            : template Jinja native du modèle (Gemma 4 / Qwen 3.5)
+#   --flash-attn on    : Flash Attention (réduit VRAM KV cache)
+#   --cache-reuse 256  : réutilise le KV des tours précédents (prompt commun) ;
+#           le préfill des longs historiques passe de ~60 s à < 1 s.
+#   --no-mmproj-offload : projeteur vision (0,86 Go) gardé en RAM système —
+#           la vision reste fonctionnelle, la VRAM est réservée au LLM.
+#   --context-shift    : en fin de contexte, la conversation défile au lieu
+#           d'échouer (les souvenirs de l'app compensent l'historique perdu).
+#   --sleep-idle-seconds 300 : unload après 5 min d'inactivité
   llamacpp:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: amie-llamacpp
@@ -75,12 +85,16 @@ services:
       --models-dir /models
       --models-max 1
       -ngl ${LLAMACPP_NGL:-99}
-      -c 32768
-      -n 8192
+      -c 16384
+      -n 4096
+      -np 1
       -ctk q8_0
       -ctv q8_0
       --jinja
       --flash-attn on
+      --cache-reuse 256
+      --no-mmproj-offload
+      --context-shift
       --sleep-idle-seconds 300
     deploy:
       resources:
