@@ -35,6 +35,13 @@ export function useChatSocket(sid: string | undefined) {
             setJoined(true);
             setAuthError(null);
             setProfile(msg.profile);
+            // La reconnexion a pu rater le `typing off` / `status done` de
+            // fin de tour : l'historique fraîchement rechargé inclut la
+            // dernière réponse, les indicateurs de réflexion doivent être
+            // levés (sinon l'UI reste bloquée sur « L'IA réfléchit… »).
+            setTyping(false);
+            setStatus("");
+            setBusy(false);
             // Rejoue l'historique persisté (une seule fois par join).
             useAmie.setState((st) => ({
               messages: msg.history.map((h) => ({
@@ -61,7 +68,15 @@ export function useChatSocket(sid: string | undefined) {
           break;
 
         case "status":
-          setStatus(msg.description);
+          // Libellé serveur (« écrit… », « peint la scène… ») affiché tel quel
+          // pendant le tour ; done → fin de tour : lève aussi `typing` (au cas
+          // où le `typing off` aurait été manqué) et efface le libellé.
+          if (msg.done) {
+            setTyping(false);
+            setStatus("");
+          } else {
+            setStatus(msg.description);
+          }
           break;
 
         case "delta": {
@@ -81,6 +96,10 @@ export function useChatSocket(sid: string | undefined) {
             .messages.find((m) => m.streaming && m.role === "assistant");
           if (streaming) endStream(streaming.id, msg.text);
           else addMessage({ id: uid(), role: "assistant", content: msg.text });
+          // Sécurité : la réponse finale clôt toujours le tour, même si un
+          // `typing off` / `status done` a été perdu en route.
+          setTyping(false);
+          setStatus("");
           setBusy(false);
           break;
         }
