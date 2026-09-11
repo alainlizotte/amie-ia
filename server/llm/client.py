@@ -159,8 +159,9 @@ class LLMClient:
         # avant de répondre (lenteur + budget tokens consommé par le raisonnement).
         if not self.cfg.think:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
-        if self.cfg.options:
-            payload["options"] = dict(self.cfg.options)
+        # Options natives (top_k, min_p…) fusionnées à la racine du payload :
+        # llama.cpp ignore une clé "options" imbriquée (format Ollama).
+        payload.update(self.cfg.options)
 
         delays = (0, 3.0, 8.0)
         last_exc: Exception | None = None
@@ -249,8 +250,7 @@ class LLMClient:
         }
         if not self.cfg.think:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
-        if self.cfg.options:
-            payload["options"] = dict(self.cfg.options)
+        payload.update(self.cfg.options)
 
         async with self._client.stream("POST", "/chat/completions", json=payload) as resp:
             resp.raise_for_status()

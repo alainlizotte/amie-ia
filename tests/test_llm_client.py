@@ -154,6 +154,41 @@ def test_chat_payload_thinking_actif_sans_kwargs(monkeypatch):
     assert "chat_template_kwargs" not in sent_payload
 
 
+def test_chat_options_fusionnees_racine_payload(monkeypatch):
+    """options (top_k…) fusionnées à la racine du payload — llama.cpp ignore
+    une clé "options" imbriquée (format Ollama)."""
+    cfg = LLMConfig(
+        base_url="http://llamacpp:8080/v1", model="qwen", options={"top_k": 20}
+    )
+    client = LLMClient(cfg)
+    sent_payload: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+    async def fake_post(url, json=None):
+        sent_payload.update(json or {})
+        return _Resp()
+
+    async def noop():
+        return True
+
+    fake_client = type("FakeClient", (), {})()
+    fake_client.post = fake_post
+    monkeypatch.setattr(client, "ensure_model_loaded", noop)
+    monkeypatch.setattr(client, "_client", fake_client)
+
+    asyncio.run(client.chat([Message(role="user", content="allo")]))
+    assert sent_payload["top_k"] == 20
+    assert "options" not in sent_payload
+
+
 def test_chat_normalise_system_hors_tete_avant_envoi(monkeypatch):
     """Les messages system hors index 0 partent en role=user (template Qwen)."""
     cfg = LLMConfig(base_url="http://llamacpp:8080/v1", model="qwen")
