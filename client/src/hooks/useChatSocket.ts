@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { ChatSocket } from "../api/ws";
 import { uid, useAmie } from "../store";
+import { playMessageSound } from "../utils/sound";
 
 export function useChatSocket(sid: string | undefined) {
   const socketRef = useRef<ChatSocket | null>(null);
@@ -96,6 +97,7 @@ export function useChatSocket(sid: string | undefined) {
             .messages.find((m) => m.streaming && m.role === "assistant");
           if (streaming) endStream(streaming.id, msg.text);
           else addMessage({ id: uid(), role: "assistant", content: msg.text });
+          playMessageSound();
           // Sécurité : la réponse finale clôt toujours le tour, même si un
           // `typing off` / `status done` a été perdu en route.
           setTyping(false);
