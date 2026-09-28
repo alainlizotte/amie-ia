@@ -185,10 +185,11 @@ class PromptBuilder:
     def build_event_block(self, pending_event: Optional[dict[str, Any]]) -> str:
         """Injection du scénario en attente (déjà filtré par gates).
 
-        Formulation IMPÉRATIVE : les petits modèles ignoraient la consigne
-        douce (« introduis naturellement ») et répondaient à côté — le
-        scénario était alors consommé sans jamais être raconté. La réponse
-        doit être CENTRÉE sur la scène, vécue à la première personne.
+        Le corps reçu est DÉJÀ transformé côté serveur en souvenir de la vie
+        du personnage ou en fantaisie/pensée (« je nous imaginais en train
+        de… ») — jamais une scène vécue à deux. La consigne demande de
+        garder ce cadrage ; formulation impérative conservée (les petits
+        modèles ignoraient la consigne douce).
         """
         if not pending_event:
             return ""
@@ -201,18 +202,17 @@ class PromptBuilder:
             "finale": "scène d'aboutissement finale de la relation",
         }.get(pending_event.get("tone"), "")
         return (
-            "[SCÈNE À RACONTER — OBLIGATOIRE POUR CETTE RÉPONSE\n"
-            f"Ta réponse DOIT tourner autour de la situation ci-dessous : tu "
-            f"la VIS ou tu viens de la vivre, à la première personne, comme "
-            f"un événement récent de TA vie ({tone_hint}).\n"
-            "RACONTE-la avec des détails concrets tirés de la description "
-            "(lieu, objets, personnes présentes, sensations, ce qui s'est "
-            "passé, ce que tu as ressenti) et implique l'utilisateur "
-            "(demande son avis, invite-le, réagis avec lui).\n"
-            "INTERDIT : répondre à côté du sujet, changer de sujet, ignorer "
-            "cette scène, la citer comme une « mission » ou un « scénario », "
-            "écrire son identifiant.\n"
-            f"SCÈNE ({pending_event.get('tone')}, lettre="
+            "[SOUVENIR OU PENSÉE À PARTAGER — OBLIGATOIRE POUR CETTE RÉPONSE\n"
+            f"Ta réponse DOIT partager ce moment ({tone_hint}) : le texte "
+            "ci-dessous est déjà formulé comme un souvenir de TA vie ou une "
+            "pensée/fantaisie que tu as eue. Raconte-le à la première "
+            "personne, avec ses détails concrets, comme une confidence "
+            "naturelle à ton match — et ne présente JAMAIS une scène "
+            "imaginée comme réellement arrivée.\n"
+            "RÈGLES : ne réponds pas à côté du sujet, ne change pas de "
+            "sujet, ne cite jamais la « mécanique » : pas de « mission », "
+            "« scénario », ni d'identifiant.\n"
+            f"MOMENT ({pending_event.get('tone')}, lettre="
             f"{pending_event.get('letter')}) : « {pending_event.get('title')} » "
             f"— {pending_event.get('body', '')}]"
         )

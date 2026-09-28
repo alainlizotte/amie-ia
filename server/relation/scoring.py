@@ -120,10 +120,20 @@ def compute_delta(
 ) -> int:
     """Calcule le delta de score d'un tour (mots-clés + patterns heuristiques).
 
-    `gain_multiplier` multiplie les POINTS GAGNÉS uniquement (compliments,
-    « tu es + adjectif », excuses, politesse, engagement, plancher neutre) —
-    1.5 = gains +50 %, passages de stades ~50 % plus rapides. Les malus ne
-    sont pas multipliés. Chaque gain est arrondi au plus proche.
+    `gain_multiplier` multiplie TOUS les points du barème, positifs comme
+    négatifs — 1.5 = barème +50 % dans les deux sens (gains ET malus),
+    passages de stades ~50 % plus rapides à mécanique de punition égale.
+    Chaque valeur est arrondie au plus proche, puis le delta est borné à
+    [delta_min ; delta_max] : avec un multiplicateur > 1, delta_min et
+    delta_max doivent être élargis proportionnellement dans la config
+    (ex : 1.5 → [-30 ; +24]) sinon les extrêmes seraient rognés.
+
+    Logique négative préservée quel que soit le multiplicateur :
+    - un message comportant au moins un malus (delta < 0) n'est JAMAIS
+      rattrapé par le plancher (le plancher ne s'applique qu'à delta == 0) ;
+    - les malus restent dominants : -24 (insulte dirigée ×1.5) l'emporte sur
+      un compliment simultané (+9) — l'insulte punit toujours plus que le
+      compliment ne récompense, exactement comme en barème de base.
 
     Renvoie un entier borné dans [delta_min, delta_max].
     """
@@ -132,25 +142,25 @@ def compute_delta(
     except (TypeError, ValueError):
         m = 1.0
 
-    def _gain(pts: int) -> int:
-        # Arrondi arithmétique (round() ferait du banker's rounding : 4.5 → 4).
-        return int(pts * m + 0.5)
+    def _pts(v: int) -> int:
+        # Arrondi au plus proche (round() ferait du banker's rounding).
+        return int(v * m + 0.5) if v >= 0 else -int(-v * m + 0.5)
 
     delta = 0
     user_lower = _normalize(user_msg)
 
-    # 1) Insultes directes — malus forcé, même dirigé (NON multiplié).
+    # 1) Insultes directes — malus forcé, même dirigé.
     for kw in NEGATIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
             if re.search(r"\b(tu es|t'es|espece de|espèce de|sale)\b", user_lower):
-                delta -= 16
+                delta += _pts(-16)
             else:
-                delta -= 10
+                delta += _pts(-10)
 
     # 2) Compliments / remerciements.
     for kw in POSITIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
-            delta += _gain(6)
+            delta += _pts(6)
 
     # 3) « tu es [adjectif positif] » → +8 de base (un seul bonus par message).
     #    Comparaison sans accents : « t'es vraiment douee » matche « douée ».
@@ -162,39 +172,39 @@ def compute_delta(
             + r"\b"
         )
         if re.search(pattern, user_na):
-            delta += _gain(8)
+            delta += _pts(8)
             break
 
     # 4) Excuses sincères → +6 de base (un seul bonus).
     for ap_kw in APOLOGY_KEYWORDS:
         if _kw_hit(ap_kw, user_lower):
-            delta += _gain(6)
+            delta += _pts(6)
             break
 
-    # 5) Insistance inappropriée à un stade bas → -6 (malus inchangé).
+    # 5) Insistance inappropriée à un stade bas → -6 de base.
     for ins_kw in INAPPROPRIATE_INSISTENCE_KEYWORDS:
         if _kw_hit(ins_kw, user_lower):
             if current_stage in ("rejet", "froid", "reserve", "neutre"):
-                delta -= 6
+                delta += _pts(-6)
             break
 
     # 6) Politesse neutre → +3 de base.
     for neu_kw in NEUTRAL_POSITIVE_KEYWORDS:
         if _kw_hit(neu_kw, user_lower):
-            delta += _gain(3)
+            delta += _pts(3)
             break
 
     # 7) Bonus d'engagement (message détaillé > 200 caractères) → +3 de base.
     if isinstance(user_msg, str) and len(user_msg) > 200:
-        delta += _gain(3)
+        delta += _pts(3)
 
     # 8) Filet « message neutre » : une conversation ordinaire (aucun mot-clé
-    #    positif ni négatif) fait progresser la relation d'au moins 1 point
-    #    (base, avant multiplicateur) — discuter reste un signe d'intérêt.
-    #    Les deltas négatifs (insultes, messages inappropriés) ne sont PAS
-    #    rattrapés.
+    #    positif ni négatif, delta resté exactement à 0) fait progresser la
+    #    relation d'au moins 1 point de base — discuter reste un signe
+    #    d'intérêt. Un delta NÉGATIF (insulte, insistance) n'est JAMAIS
+    #    rattrapé, même partiellement compensé par un compliment.
     if delta == 0:
-        delta = _gain(1)
+        delta = _pts(1)
 
     return max(delta_min, min(delta_max, delta))
 

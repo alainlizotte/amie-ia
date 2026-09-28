@@ -90,8 +90,8 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
 - **Score relationnel** (100 au départ) ajusté après chaque message par un
   moteur mots-clés/patterns ; stades : rejet → froid → réservé → neutre →
   chaleureux → proche. Barème de base (`server/relation/scoring.py`),
-  multiplié par `relation.gain_multiplier` (1.5 par défaut — gains +50 %,
-  malus inchangés) :
+  multiplié par `relation.gain_multiplier` (1.5 par défaut — **tout le
+  barème +50 %**, gains et malus) :
 
   | Signal | Base | Effectif (×1.5) |
   |---|---|---|
@@ -101,14 +101,16 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   | Compliment / remerciement (par mot-clé) | +6 | +9 |
   | Excuses sincères | +6 | +9 |
   | « tu es + [adjectif positif] » | +8 (1× par message) | +12 |
-  | Insistance inappropriée à un stade bas | -6 | -6 |
-  | Insulte non dirigée | -10 | -10 |
-  | Insulte dirigée (« tu es… », « sale… ») | -16 | -16 |
+  | Insistance inappropriée à un stade bas | -6 | -9 |
+  | Insulte non dirigée | -10 | -15 |
+  | Insulte dirigée (« tu es… », « sale… ») | -16 | -24 |
 
   L'appariement des mots-clés est insensible aux accents (« genial » vaut
-  « génial »). Delta borné à [delta_min ; delta_max] ([−20 ; +24] par
-  défaut — les gains cumulés sont plafonnés par tour). Les deltas négatifs
-  ne sont jamais rattrapés par le plancher.
+  « génial »). Delta borné à [delta_min ; delta_max] ([-30 ; +24] par
+  défaut — élargir ces bornes proportionnellement au multiplicateur).
+  Logique négative préservée quel que soit le multiplicateur : un message
+  contenant un malus n'est jamais rattrapé par le plancher, et une insulte
+  (-24) pèse toujours plus qu'un compliment simultané (+9).
 
 - **Scénarios** (lettres A-K par personnage) injectés côté serveur selon les
   gates de stade ; consommation détectée par similarité cosinus entre le
