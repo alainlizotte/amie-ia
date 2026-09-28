@@ -1467,6 +1467,157 @@ def _truncate_texto(text: str, limite: int = 600) -> str:
     return coupe.strip()
 
 
+# Transformation d'un corps de scénario en « souvenir » injectable.
+# Bug beta : les corps de scénarios sont écrits comme des scènes partagées
+# (« Élodie vous invite… au coin de VOS lèvres ») — même avec des consignes
+# strictes, le modèle retape la scène partagée et le résultat est incohérent
+# dans une app de rencontre. Solution : transformer UNE FOIS le corps côté
+# serveur (appel LLM étroit, résultat en cache dans le profil) :
+# - scène SANS le match → souvenir vécu par le personnage (son côté de
+#   l'écran, au passé) ;
+# - scène AVEC le match → fantaisie qu'il/elle a eue (« il m'est venue une
+#   drôle de pensée, je nous imaginais en train de… ») : l'essence de la
+#   scène est préservée mais clairement présentée comme imaginée, jamais
+#   vécue.
+_SOUVENIR_PROMPT = (
+    "Tu es un rédacteur. Réécris la scène suivante pour un personnage "
+    "({name}) qui en fait le récit à son match sur une application de "
+    "rencontre.\n"
+    "{mode}\n"
+    "2 à 4 phrases, français, ton vivant et naturel. Réponds UNIQUEMENT le "
+    "texte réécrit, sans commentaire ni titre.\n\n"
+    "SCÈNE : {body}\n"
+)
+
+# Mode « souvenir » : la scène ne comporte pas le match — vécue de son côté.
+_MODE_SOUVENIR = (
+    "RÉÉCRIS la scène en UN SOUVENIR RÉCENT qu'il/elle a vécu SEUL(E) — de "
+    "son côté de l'écran (travail, amis, famille, quotidien) : au passé, à "
+    "la première personne (« j'ai », « je suis »). Toute interaction avec "
+    "« vous/tu » devient une interaction avec ses collègues, ses amis ou "
+    "seule. Aucun contact physique partagé avec l'interlocuteur."
+)
+
+# Mode « fantaisie » : la scène implique le match — imaginée, jamais vécue.
+_MODE_FANTAISIE = (
+    "RÉÉCRIS la scène en FANTAISIE : le personnage raconte qu'il/elle a "
+    "IMAGINÉ la scène — jamais vécue (ils ne se sont pas encore rencontrés "
+    "en vrai). Commence par une accroche du type « Il m'est venue une drôle "
+    "de pensée hier soir… », « J'ai fantasmé là-dessus… », puis raconte ce "
+    "qu'il/elle se serait imaginé en train de faire AVEC son match (« je "
+    "nous imaginais en train de… »). Garde les détails concrets de la scène "
+    "dans l'imaginaire, au conditionnel passé ou au présent de narration "
+    "onirique. Ne présente JAMAIS la scène comme réellement arrivée."
+)
+
+
+def _scene_implique_match(body: str) -> bool:
+    """True si le corps du scénario implique l'utilisateur (2e personne)."""
+    return bool(re.search(
+        r"\b(vous|votre|vos|tu|ta|tes|te|t'approche)\b",
+        (body or "").lower(),
+    ))
+
+
+async def _souvenir_transforme(
+    profile: dict[str, Any], pending: dict[str, Any], character: dict[str, Any]
+) -> str:
+    """Corps du scénario transformé en souvenir/fantaisie (cache par event).
+
+    Renvoie le texte transformé (mode souvenir si la scène ne comporte pas
+    le match, fantaisie sinon), ou le corps original en cas d'échec.
+    """
+    eid = str(pending.get("event_id") or "")
+    cache = profile.setdefault("souvenirs_scenes", {})
+    if eid and isinstance(cache.get(eid), str) and cache[eid]:
+        return cache[eid]
+
+    llm = getattr(app.state, "client", None)
+    body = str(pending.get("body", "") or "")
+    if llm is None or not body:
+        return body
+
+    name = character.get("name") or "le personnage"
+    mode = _MODE_FANTAISIE if _scene_implique_match(body) else _MODE_SOUVENIR
+    try:
+        result = await llm.chat(
+            [Message(role="user", content=_SOUVENIR_PROMPT.format(
+                name=name, mode=mode, body=body[:1500],
+            ))],
+            temperature=0.4,
+            max_tokens=400,
+        )
+        texte = _cut_meta_block(result.content or "").strip().strip('"« »')
+        if texte and len(texte) >= 30:
+            if eid:
+                cache[eid] = texte
+            return texte
+    except Exception as e:  # noqa: BLE001
+        _log.warning("transformation souvenir échouée (corps original gardé) : %s", e)
+    return body
+
+
+# Prompt de la passe « narration de scène » — tâche UNIQUE et étroite.
+# Bug beta : injecté dans la réponse principale, le scénario était souvent
+# ignoré par les petits modèles (trop de consignes concurrentes). Un appel
+# dédié, qui ne demande QUE de raconter le moment en texto, est suivi de
+# façon fiable par le même modèle — sans serveur ni modèle supplémentaire.
+# Le corps reçu est DÉJÀ transformé en souvenir de la vie du personnage ou
+# en fantaisie (« je nous imaginais en train de… ») par _souvenir_transforme.
+_SCENE_PROMPT = (
+    "Tu es {name}, sur une application de rencontre. Tu écris à ton match.\n"
+    "RACONTE-LUI ce moment dans un texto de 2 à 5 phrases, à la première "
+    "personne, ton naturel et vivant. Le texte ci-dessous est déjà formulé "
+    "comme un souvenir de TA vie ou une pensée/fantaisie que tu as eue : "
+    "garde CE cadrage, cite ses détails concrets, et ne présente JAMAIS une "
+    "scène imaginée comme réellement arrivée.\n"
+    "Termine par une question ou une réaction qui lui donne la réplique.\n"
+    "{stage_instruction}\n"
+    "TEXTE : {body}\n"
+    "Réponds UNIQUEMENT le texte du message — aucune analyse, aucune "
+    "annotation, aucun titre."
+)
+
+
+async def _raconter_scene(
+    profile: dict[str, Any], pending: dict[str, Any], contexte: str
+) -> str:
+    """Passe 2 du tour : raconte la scène du scénario en un texto dédié.
+
+    Appelée quand la réponse principale n'a pas intégré le scénario (test
+    des mots signature). Le prompt ne demande qu'UNE chose — raconter la
+    scène — ce que même un petit modèle exécute de façon fiable. Renvoie
+    le texto nettoyé, ou "" en cas d'échec/redo (le scénario sera alors
+    retenté au tour suivant comme avant).
+    """
+    from .relation.stages import get_stage_instruction
+
+    llm = getattr(app.state, "client", None)
+    if llm is None:
+        return ""
+    character = profile.get("character", {})
+    name = character.get("name") or "Ton personnage"
+    prompt = _SCENE_PROMPT.format(
+        name=name,
+        stage_instruction=get_stage_instruction(
+            profile.get("relationship_stage", "froid")
+        ),
+        body=str(pending.get("body", ""))[:1500],
+    )
+    messages = [
+        Message(role="user", content=prompt),
+    ]
+    result = await llm.chat(messages)
+    texte = _cut_meta_block(result.content or "")
+    texte = _truncate_texto(texte, 600)
+    if not texte or len(texte) < 30:
+        return ""
+    # Redite du texte principal ? Inutile d'envoyer deux fois la même chose.
+    if _too_similar(texte, contexte):
+        return ""
+    return texte
+
+
 def _clean_proactive_text(text: str, *avoid: str) -> str:
     """Assainit la réponse générée pour un message spontané :
     - retire une reprise à l'identique de textes à éviter (dernier message
@@ -1914,10 +2065,27 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
             stage = compute_stage(int(profile["relationship_score"]))
 
-            # 3. Scénario en attente (gates par stade déjà appliquées).
+            # 3. Scénario en attente (gates par stade déjà appliquées) — le
+            #    corps est transformé UNE FOIS en souvenir/fantaisie (cache
+            #    « souvenirs_scenes ») : les corps d'origine sont écrits
+            #    comme des scènes partagées avec le match (« au coin de VOS
+            #    lèvres »), incohérentes en app de rencontre. La narration
+            #    porte donc sur un souvenir de SON côté ou une fantaisie
+            #    (« je nous imaginais en train de… »), jamais une scène
+            #    vécue à deux.
             pending = P.get_pending_event(profile, stage, cooldown_hours=rcfg.cooldown_hours)
             if pending:
                 profile["last_injected_event_id"] = pending.get("event_id")
+                try:
+                    corps = await _souvenir_transforme(
+                        profile, pending, profile.get("character", {}),
+                    )
+                    if corps:
+                        pending["body"] = corps
+                except Exception as e:  # noqa: BLE001
+                    _log.warning(
+                        "[%s] transformation du scénario ignorée : %s", sid, e,
+                    )
 
             # 4. Souvenirs rappelés (recherche sémantique llamaembed).
             memories = []
@@ -1970,6 +2138,42 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             hub_hist.append("assistant", narration)
             await hub.broadcast({"type": "dm", "text": narration})
 
+            # 6bis. Narration du scénario en 2e passe — si la réponse
+            #      principale n'a PAS intégré la scène en attente (test des
+            #      mots signature), un appel LLM dédié (tâche unique :
+            #      « raconte cette scène en texto ») produit un SECOND
+            #      message, comme un vrai texto de suivi. Sans cela, les
+            #      petits modèles ignorent l'injection et le scénario est
+            #      consommé sans jamais être vécu.
+            scene_msg = ""
+            if pending and stage != "rejet":
+                deja_integre = len(
+                    _mots_signature(pending.get("body", ""))
+                    & _mots_signature(narration)
+                ) >= 2
+                if not deja_integre:
+                    try:
+                        await hub.broadcast({"type": "typing", "on": True})
+                        await hub.broadcast({
+                            "type": "status", "description": "écrit…",
+                        })
+                        scene_msg = await _raconter_scene(
+                            profile, pending, narration,
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        _log.warning(
+                            "[%s] passe narration scénario échouée (ignorée) : %s",
+                            sid, e,
+                        )
+                    finally:
+                        await hub.broadcast({"type": "typing", "on": False})
+                        await hub.broadcast({
+                            "type": "status", "description": "", "done": True,
+                        })
+                    if scene_msg:
+                        hub_hist.append("assistant", scene_msg)
+                        await hub.broadcast({"type": "dm", "text": scene_msg})
+
             # 7. Auto-scoring déterministe (mots-clés + patterns).
             delta = compute_delta(
                 text, narration, stage,
@@ -2003,35 +2207,51 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 eid = pending.get("event_id", "")
                 attempts_map = profile.setdefault("event_attempts", {})
                 attempts = int(attempts_map.get(eid, 0)) + 1
-                sim = 0.0
-                embedder: Optional[Embedder] = getattr(app.state, "embedder", None)
-                if embedder is not None:
-                    try:
-                        ev_vec = await embedder.embed_documents([pending.get("body", "")])
-                        as_vec = await embedder.embed_query(narration[:2000])
-                        sim = cosine(ev_vec[0], as_vec)
-                    except Exception:
-                        sim = 0.0
-                else:
-                    sim = rcfg.event_consume_similarity  # mode dégradé : consomme
-                signatures = _mots_signature(pending.get("body", "")) & _mots_signature(narration)
-                integre = len(signatures) >= 2
-                if (
-                    (sim >= rcfg.event_consume_similarity and integre)
-                    or attempts >= rcfg.event_max_attempts
-                ):
+                if scene_msg:
+                    # Le souvenir/fantaisie a été PARTAGÉ en 2e passe : le
+                    # moment est vécu — consommation immédiate (sinon la
+                    # même histoire serait re-racontée aux tours suivants).
                     P.mark_event_consumed(profile, eid)
                     consumed_now = True
                 else:
-                    attempts_map[eid] = attempts
-                    profile["last_injected_event_id"] = None  # retenter plus tard
+                    # La scène n'a pas pu être racontée en 2e passe : on
+                    # juge l'intégration de la réponse principale (mots
+                    # signature + similarité), retry puis consommation
+                    # forcée après event_max_attempts tours.
+                    sim = 0.0
+                    texte_tour = narration
+                    embedder: Optional[Embedder] = getattr(app.state, "embedder", None)
+                    if embedder is not None:
+                        try:
+                            ev_vec = await embedder.embed_documents([pending.get("body", "")])
+                            as_vec = await embedder.embed_query(texte_tour[:2000])
+                            sim = cosine(ev_vec[0], as_vec)
+                        except Exception:
+                            sim = 0.0
+                    else:
+                        sim = rcfg.event_consume_similarity  # mode dégradé : consomme
+                    signatures = (
+                        _mots_signature(pending.get("body", ""))
+                        & _mots_signature(texte_tour)
+                    )
+                    integre = len(signatures) >= 2
+                    if (
+                        (sim >= rcfg.event_consume_similarity and integre)
+                        or attempts >= rcfg.event_max_attempts
+                    ):
+                        P.mark_event_consumed(profile, eid)
+                        consumed_now = True
+                    else:
+                        attempts_map[eid] = attempts
+                        profile["last_injected_event_id"] = None  # retenter plus tard
 
             st.save(profile)
 
             # 9. Extraction périodique de souvenirs (tous les N tours) —
             #    repersiste le profil si des faits ont été ajoutés, sinon ils
             #    seraient perdus au rechargement du tour suivant.
-            if await _extract_memories_if_due(sid, profile, text, narration):
+            texte_extrait = narration + ("\n" + scene_msg if scene_msg else "")
+            if await _extract_memories_if_due(sid, profile, text, texte_extrait):
                 st.save(profile)
 
             # 10. Diffuse l'état relationnel mis à jour (barre de progression GUI).

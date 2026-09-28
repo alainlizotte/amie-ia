@@ -706,8 +706,8 @@ class TestConformiteAntiTriche:
         bloc = self.pb.build_event_block(ev)
         assert "clara_moreau_C" not in bloc      # id jamais montré
         # Consigne impérative anti-méta (ne pas citer la mécanique).
-        assert "INTERDIT" in bloc
         assert "OBLIGATOIRE" in bloc
+        assert "JAMAIS" in bloc
         assert "La crise de la page blanche" in bloc
 
     def test_event_block_vide_sans_scenario(self):

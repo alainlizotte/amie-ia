@@ -1,14 +1,23 @@
 // Coquille applicative — bandeau supérieur + zone de contenu (Outlet).
 
+import { useEffect } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { setToken } from "./api/rest";
 import { useAmie } from "./store";
+import { armAudio } from "./utils/sound";
 
 export default function App() {
   const user = useAmie((s) => s.user);
   const setUser = useAmie((s) => s.setUser);
   const reset = useAmie((s) => s.reset);
   const navigate = useNavigate();
+
+  // Audio : arme l'AudioContext au premier geste utilisateur — sinon le
+  // navigateur peut laisser le contexte « suspended » et le ding de
+  // notification du premier message du personnage resterait muet.
+  useEffect(() => {
+    armAudio();
+  }, []);
 
   function logout() {
     setUser("");

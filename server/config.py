@@ -67,14 +67,16 @@ class RelationConfig:
     indépendants du LLM (le modèle ne peut ni les contourner ni les calculer)."""
     default_score: int = 100          # deux inconnus qui se rencontrent
     delta_max: int = 24               # plafond de progression par message
-                                      # (doit couvrir le meilleur gain possible :
-                                      # avec gain_multiplier 1.5 → 9+9+12 = 30,
-                                      # capé à 24 comme l'ancien 16/20 l'était)
-    delta_min: int = -20              # plancher de régression par message
-    # Multiplicateur des POINTS GAGNÉS (compliments, politesse, excuses,
-    # engagement, plancher neutre) — 1.5 = gains +50 %, progression des
-    # stades ~50 % plus rapide. Les malus (insultes, insistance) et les
-    # plafonds ne sont PAS multipliés.
+                                      # (couvre le meilleur gain : 9+9+12 = 30
+                                      # avec le multiplicateur, capé à 24)
+    delta_min: int = -30              # plancher de régression par message
+                                      # (couvre le pire malus : insulte dirigée
+                                      # 16 × 1.5 = 24, plus un éventuel autre
+                                      # signal — garde une marge à -30)
+    # Multiplicateur du BARÈME COMPLET (gains ET malus) :
+    # 1.5 = tous les points +50 % → progression ~50 % plus rapide, punitions
+    # renforcées à proportion. Coupler delta_max/delta_min élargis
+    # (24/-30) pour ne pas rogner les extrêmes.
     gain_multiplier: float = 1.0
     cooldown_hours: float = 24.0      # délai min entre deux scénarios injectés
     event_max_attempts: int = 3       # tours max avant consommation forcée d'un event

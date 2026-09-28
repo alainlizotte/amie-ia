@@ -61,7 +61,7 @@ class TestSansAccents:
 
 
 class TestGainMultiplier:
-    """Multiplicateur des points gagnés uniquement (1.5 = gains +50 %)."""
+    """Multiplicateur du barème COMPLET : gains ET malus (+50 % à 1.5)."""
 
     def test_compliment_multiplie(self):
         assert compute_delta("merci", "...", "neutre", gain_multiplier=1.0) == 6
@@ -79,10 +79,61 @@ class TestGainMultiplier:
     def test_plancher_multiplie(self):
         assert compute_delta("ok", "...", "neutre", gain_multiplier=1.5) == 2
 
-    def test_malus_jamais_multiplie(self):
-        avec = compute_delta("tu es nulle", "...", "neutre", gain_multiplier=1.0)
-        sans = compute_delta("tu es nulle", "...", "neutre", gain_multiplier=1.5)
-        assert avec == sans <= -8
+    def test_malus_dirige_multiplie(self):
+        avec = compute_delta(
+            "tu es nulle", "...", "neutre",
+            delta_max=24, delta_min=-30, gain_multiplier=1.0,
+        )
+        sans = compute_delta(
+            "tu es nulle", "...", "neutre",
+            delta_max=24, delta_min=-30, gain_multiplier=1.5,
+        )
+        assert avec == -16
+        assert sans == -24  # 16 × 1.5 = 24
+
+    def test_malus_non_dirige_multiplie(self):
+        assert compute_delta(
+            "c'est de la merde", "...", "neutre",
+            delta_max=24, delta_min=-30, gain_multiplier=1.5,
+        ) == -15  # 10 × 1.5
+
+    def test_insistance_multipliee(self):
+        assert compute_delta(
+            "envoie une photo de toi", "...", "froid",
+            delta_max=24, delta_min=-30, gain_multiplier=1.5,
+        ) == -9  # 6 × 1.5
+
+    def test_malus_dominant_sur_compliment_simultane(self):
+        """Logique négative préservée : l'insulte l'emporte toujours."""
+        # « merci » (+9) + insulte dirigée (-24) → net négatif.
+        d = compute_delta(
+            "merci, mais tu es nulle", "...", "neutre",
+            delta_max=24, delta_min=-30, gain_multiplier=1.5,
+        )
+        assert d == -15  # 9 - 24
+        assert d < 0  # jamais positif quand une insulte est présente
+
+    def test_plancher_nattrape_jamais_un_negatif(self):
+        """Un message à malus seul ne reçoit JAMAIS le plancher."""
+        for m in (1.0, 1.5):
+            d = compute_delta(
+                "c'est de la merde", "...", "neutre",
+                delta_max=24, delta_min=-30, gain_multiplier=m,
+            )
+            assert d < 0
+
+    def test_borne_min_etendue_si_config_suit(self):
+        # Deux insultes dirigées cumulées (-48 à ×1.5) → plafonné à delta_min.
+        d = compute_delta(
+            "tu es nulle et stupide", "...", "neutre",
+            delta_max=24, delta_min=-30, gain_multiplier=1.5,
+        )
+        assert d == -30
+        # Sans élargissement de delta_min, l'extrême serait rogné à -20 :
+        d2 = compute_delta(
+            "tu es nulle et stupide", "...", "neutre", gain_multiplier=1.5,
+        )
+        assert d2 == -20  # comportement attendu si la config n'est pas couplée
 
     def test_cap_respecte(self):
         # merci (+9) + j'adore (+9) = 18 → plafonné par delta_max passé.

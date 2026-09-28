@@ -41,7 +41,10 @@ SCHEMA_SESSION: dict[str, Any] = {
     "last_event_at": None,
     "last_injected_event_id": None,
     "memories": [],          # [{fact, embedding, ts}]
-    "photos": [],            # [{file, kind, caption, ts}]
+    "photos": [],            # [{file, kind, caption, ts, prompt?, seed}]
+    # Corps de scénarios transformés en souvenir/fantaisie (cache par
+    # event_id) — évite de retransformer à chaque tour.
+    "souvenirs_scenes": {},
     # Messages proactifs du personnage sans réponse de l'utilisateur
     # (badge « ! » dans « Mes rencontres », pénalité de relation).
     "unanswered_messages": 0,
