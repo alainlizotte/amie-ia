@@ -154,6 +154,22 @@ export async function apiPhotos(sid: string): Promise<{ photos: PhotoEntry[] }> 
   return jsonOrThrow(res);
 }
 
+/** Régénère une photo de l'album — même scène, nouvelle seed. */
+export async function apiRegenererPhoto(
+  sid: string,
+  file: string,
+): Promise<{ ok: boolean; photo: PhotoEntry }> {
+  const res = await fetch(
+    `${API}/sessions/${encodeURIComponent(sid)}/photos/regenerer`,
+    {
+      method: "POST",
+      headers: entetes({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ file }),
+    },
+  );
+  return jsonOrThrow(res);
+}
+
 // --------------------------------------------------------------------------- //
 //  Mon profil « dating app » — fiche de l'utilisateur + photo (vision).
 // --------------------------------------------------------------------------- //

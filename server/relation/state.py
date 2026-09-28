@@ -149,16 +149,45 @@ class RelationState:
             profile["last_interaction"] = datetime.utcnow().isoformat()
 
     def add_photo(self, profile: dict[str, Any], file: str, kind: str,
-                  caption: str) -> None:
-        """Enregistre une photo dans l'album (remplace si le fichier existe déjà)."""
+                  caption: str, prompt: str = "",
+                  seed: Optional[int] = None) -> None:
+        """Enregistre une photo dans l'album (remplace si le fichier existe déjà).
+
+        `prompt` et `seed` sont conservés pour permettre la RÉGÉNÉRATION
+        (même scène, nouvelle graine) depuis l'album.
+        """
         photos = profile.setdefault("photos", [])
         photos[:] = [p for p in photos if p.get("file") != file]
-        photos.append({
+        entry: dict[str, Any] = {
             "file": file,
             "kind": kind,
             "caption": caption,
             "ts": datetime.now().isoformat(),
-        })
+        }
+        if prompt:
+            entry["prompt"] = prompt
+        if seed is not None:
+            entry["seed"] = int(seed)
+        photos.append(entry)
+
+    def maj_photo(self, profile: dict[str, Any], ancien_fichier: str,
+                  nouveau_fichier: str, prompt: str,
+                  seed: Optional[int]) -> Optional[dict[str, Any]]:
+        """Remplace le fichier d'une entrée photo (régénération).
+
+        La légende, le kind et la date d'origine sont conservés ; seul le
+        fichier (nouvelle image), le prompt et la seed sont mis à jour.
+        Renvoie l'entrée mise à jour, ou None si le fichier est inconnu.
+        """
+        photos = profile.setdefault("photos", [])
+        for p in photos:
+            if p.get("file") == ancien_fichier:
+                p["file"] = nouveau_fichier
+                p["prompt"] = prompt
+                if seed is not None:
+                    p["seed"] = int(seed)
+                return p
+        return None
 
     def photo_url(self, file: str) -> str:
         """URL publique d'une photo de la session (montage /data)."""

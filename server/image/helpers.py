@@ -204,8 +204,19 @@ _CLOTHING_RULES = {
 _CLOTHING_RULE_DEFAULT = "fully dressed, sober outfit, nothing suggestive"
 
 _MOTS_NUDITE = re.compile(
-    r"\b(nude|naked|nudity|topless|undressed|unclothed|no clothes|"
-    r"without clothes|nsfw|nue|dénudée?|sans v[êe]tements)\b",
+    r"\b(nudes?|naked|nudity|topless|undressed|undressing|unclothed|"
+    r"no clothes|without clothes|wearing nothing|wears nothing|"
+    r"nothing on\b|au naturel|nsfw|"
+    r"nue|nus|nues|d[ée]nud[ée]s?|sans v[êe]tements|[àa] poil)\b",
+    re.IGNORECASE,
+)
+
+# Second filet pour les stades pudeurs (tout sauf chaleureux/proche) :
+# mentions de lingerie/sous-vêtements et vocabulaire sensuel qui
+# contrediraient la clause « fully dressed / nothing suggestive ».
+_MOTS_SUGGESTIFS = re.compile(
+    r"\b(lingerie|underwear|panties|bra\b|bikini|sexy|erotic|sensual|"
+    r"seductive|provocative|cleavage|boudoir)\b",
     re.IGNORECASE,
 )
 
@@ -215,11 +226,16 @@ def sanitize_scene(scene: str, stage: str) -> str:
 
     - supprime toute mention de nudité tant que le stade n'est pas « proche »
       (garde-fou dur : le LLM ne peut pas contourner les règles de tenue) ;
+    - supprime aussi les mentions de lingerie/sous-vêtements/vocabulaire
+      sensuel aux stades pudeurs (rejet → neutre), qui contrediraient la
+      clause de tenue « fully dressed » injectée dans le prompt final ;
     - retire guillemets et retours à la ligne, borne la longueur.
     """
     s = str(scene or "").replace('"', " ")
     if stage != "proche":
         s = _MOTS_NUDITE.sub("", s)
+    if stage in ("rejet", "froid", "reserve", "neutre"):
+        s = _MOTS_SUGGESTIFS.sub("", s)
     s = " ".join(s.split())
     if stage != "proche":
         s = ", ".join(p.strip(" ,") for p in s.split(",") if p.strip(" ,"))
@@ -284,12 +300,17 @@ async def generer_image(
     usage: str,
     prompt: str,
     dest_path: str,
-) -> Optional[str]:
-    """Génère une image ; renvoie le chemin ou None (fallback silencieux)."""
+) -> Optional[tuple[str, int]]:
+    """Génère une image ; renvoie (chemin, seed) ou None (fallback silencieux).
+
+    La seed est retournée pour être conservée avec la photo : la
+    régénération depuis l'album réexécute le même prompt avec une nouvelle
+    graine aléatoire.
+    """
     try:
-        path, _seed = await backend.generer(usage, prompt, dest_path)
+        path, seed = await backend.generer(usage, prompt, dest_path)
         if os.path.isfile(path):
-            return path
+            return path, seed
     except ComfyUIError as e:
         _log.warning("[image] échec génération %s : %s", usage, e)
     except Exception as e:  # inattendue — tracée pour diagnostic

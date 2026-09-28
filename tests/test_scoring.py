@@ -42,6 +42,66 @@ class TestNeutre:
         assert compute_delta("quel menu recommandes-tu ?", "...", "reserve") == 1
 
 
+class TestSansAccents:
+    """Le barème est insensible aux accents dans les deux sens (bug beta :
+    « genial » sans accent ne rapportait rien alors que « génial » oui)."""
+
+    def test_compliment_sans_accent(self):
+        avec = compute_delta("c'est génial merci", "...", "neutre")
+        sans = compute_delta("c'est genial merci", "...", "neutre")
+        assert avec == sans > 0
+
+    def test_insulte_sans_accent_sanctionnee(self):
+        d = compute_delta("tu es debile", "...", "neutre")
+        assert d <= -8  # « débile » dirigé : malus fort même sans accent
+
+    def test_tu_es_adjectif_sans_accent(self):
+        d = compute_delta("franchement tu es vraiment douee", "...", "neutre")
+        assert d >= 8  # « douée » matché via « douee »
+
+
+class TestGainMultiplier:
+    """Multiplicateur des points gagnés uniquement (1.5 = gains +50 %)."""
+
+    def test_compliment_multiplie(self):
+        assert compute_delta("merci", "...", "neutre", gain_multiplier=1.0) == 6
+        assert compute_delta("merci", "...", "neutre", gain_multiplier=1.5) == 9
+
+    def test_politesse_multipliee_arrondie(self):
+        # 3 × 1.5 = 4.5 → arrondi au plus proche = 5
+        assert compute_delta("salut", "...", "neutre", gain_multiplier=1.5) == 5
+
+    def test_tu_es_adjectif_multiplie(self):
+        assert compute_delta(
+            "tu es vraiment douce", "...", "neutre", gain_multiplier=1.5,
+        ) == 12
+
+    def test_plancher_multiplie(self):
+        assert compute_delta("ok", "...", "neutre", gain_multiplier=1.5) == 2
+
+    def test_malus_jamais_multiplie(self):
+        avec = compute_delta("tu es nulle", "...", "neutre", gain_multiplier=1.0)
+        sans = compute_delta("tu es nulle", "...", "neutre", gain_multiplier=1.5)
+        assert avec == sans <= -8
+
+    def test_cap_respecte(self):
+        # merci (+9) + j'adore (+9) = 18 → plafonné par delta_max passé.
+        d = compute_delta(
+            "merci j'adore", "...", "neutre",
+            delta_max=24, gain_multiplier=1.5,
+        )
+        assert d == 18
+        d2 = compute_delta(
+            "merci j'adore", "...", "neutre",
+            delta_max=16, gain_multiplier=1.5,
+        )
+        assert d2 == 16
+
+    def test_multiplicateur_invalide_sans_crash(self):
+        d = compute_delta("merci", "...", "neutre", gain_multiplier="x")
+        assert d == 6  # retombe sur 1.0
+
+
 class TestInsultes:
     def test_insulte_dirigee_malus_fort(self):
         d = compute_delta("tu es vraiment conne et stupide", "...", "chaleureux")

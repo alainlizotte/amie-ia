@@ -12,6 +12,9 @@ import type { WsInMessage, WsOutMessage } from "./types";
 export type WsHandler = (msg: WsInMessage) => void;
 
 export class ChatSocket {
+  /** Nb d'échecs de join consécutifs avant d'afficher une erreur à l'utilisateur. */
+  static readonly MAX_FAILED_JOINS = 5;
+
   private ws: WebSocket | null = null;
   private url: string;
   private handlers = new Set<WsHandler>();
@@ -20,6 +23,12 @@ export class ChatSocket {
   private openedOnce = false;
   private queue: WsOutMessage[] = [];
   private lastJoin: { token: string } | null = null;
+  // Join jamais abouti (« joined » jamais reçu) — sert à distinguer une
+  // reconnexion légitime d'une session injoignable (fiche corrompue,
+  // serveur en erreur) qui bouclerait indéfiniment sans rien afficher.
+  private joinedOnce = false;
+  private failedJoins = 0;
+  private echecSignale = false;
 
   constructor(sessionId: string) {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -51,6 +60,12 @@ export class ChatSocket {
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as WsInMessage;
+        if (msg.type === "sys" && msg.event === "joined") {
+          // Join abouti : la session répond normalement.
+          this.joinedOnce = true;
+          this.failedJoins = 0;
+          this.echecSignale = false;
+        }
         this.handlers.forEach((h) => h(msg));
       } catch {
         /* payload non JSON — ignoré */
@@ -58,6 +73,28 @@ export class ChatSocket {
     };
     this.ws.onclose = () => {
       if (this.manualClose) return;
+      if (!this.joinedOnce) {
+        this.failedJoins += 1;
+        if (
+          this.failedJoins >= ChatSocket.MAX_FAILED_JOINS &&
+          !this.echecSignale
+        ) {
+          // Signale UNE fois l'utilisateur (écran 🔒 + retour rencontres)
+          // au lieu de boucler en silence sur « Connexion à la rencontre… ».
+          // Les tentatives continuent en arrière-plan : si le serveur
+          // redevient joignable, le « joined » qui suit efface l'erreur.
+          this.echecSignale = true;
+          const echec: WsInMessage = {
+            type: "sys",
+            event: "auth_failed",
+            detail:
+              "Impossible de rejoindre la rencontre — la session ne répond " +
+              "pas correctement. Réessayez dans un instant ou retournez à " +
+              "« Mes rencontres ».",
+          };
+          this.handlers.forEach((h) => h(echec));
+        }
+      }
       const delay = Math.min(1000 * 2 ** this.retries, 5000);
       this.retries += 1;
       setTimeout(() => this.connect(), delay);

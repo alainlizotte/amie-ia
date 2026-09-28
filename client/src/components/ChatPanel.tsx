@@ -92,6 +92,8 @@ export function ChatPanel({
           onChange={(e) => setText(e.target.value)}
           placeholder={isDisabled ? "L'IA réfléchit…" : `Écrire à ${characterName}…`}
           disabled={isDisabled}
+          maxLength={2000}
+          title="2000 caractères maximum, comme sur une vraie messagerie"
           className="min-w-0 flex-1 rounded-full border border-rose-900/50 bg-[#1a0b14] px-4 py-2.5 text-sm text-rose-50 outline-none transition focus:border-rose-500 disabled:opacity-40"
         />
         <button

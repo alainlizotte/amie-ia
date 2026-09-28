@@ -22,7 +22,23 @@ class TestParseFacts:
         assert parse_facts('["a un chat"]') == ["a un chat"]
 
     def test_items_non_string_filtres(self):
-        assert parse_facts('["ok", 42, null, {"x":1}]') == ["ok"]
+        # Nombres et null restent filtrés…
+        assert parse_facts('["ok", 42, null]') == ["ok"]
+        # …mais les PAIRES (format « presque bon » observé en production,
+        # qui rendait l'extraction inopérante) sont désormais aplaties en
+        # faits lisibles au lieu d'être rejetées silencieusement.
+        assert parse_facts('["ok", ["nom du chat", "Rex"]]') == [
+            "ok", "nom du chat : Rex",
+        ]
+        assert parse_facts('[{"x": 1}]') == ["x : 1"]
+
+    def test_paires_aplaties_format_production(self):
+        """Repro réel du bug beta : le modèle répondait par des paires."""
+        brut = '[["nom du chat", "Rex"], ["profession", "boulanger"]]'
+        assert parse_facts(brut) == [
+            "nom du chat : Rex",
+            "profession : boulanger",
+        ]
 
     def test_garbage_renvoie_vide_sans_crash(self):
         for bad in ("", "pas du json {", "[incomplet", "null"):

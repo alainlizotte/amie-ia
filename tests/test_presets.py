@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from server.main import _mots_signature  # noqa: E402
 from server.relation import presets as P  # noqa: E402
 from server.relation.stages import compute_stage  # noqa: E402
 
@@ -143,3 +144,53 @@ class TestConsommation:
         assert built["name"] == chars[0]["name"]
         assert built["preset_id"] == chars[0]["id"]
         assert isinstance(built.get("appearance"), str)
+
+
+class TestMotsSignature:
+    """Garde-fou anti-consommation-abusive : une réponse doit RAconter le
+    scénario (≥ 2 mots signature du corps), pas juste parler du même thème
+    (bug beta : « Dégustation privée » consommé par une réponse sur les
+    équipements de cuisine)."""
+
+    def test_mots_courts_et_stopwords_exclus(self):
+        sig = _mots_signature(
+            "Après la fermeture du restaurant, elle m'invite seule en cuisine "
+            "pour goûter sa nouvelle carte, un verre de grand cru à la main."
+        )
+        assert "restaurant" in sig
+        assert "fermeture" in sig
+        assert "cuisine" in sig
+        for banal in ("apres", "nouvelle", "entre"):
+            assert banal not in sig
+
+    def test_reponse_hors_sujet_insuffisante(self):
+        # Repro du bug : même univers (cuisine, sauce) mais le scénario
+        # n'est PAS raconté → moins de 2 mots signature communs.
+        body = (
+            "Après la fermeture du restaurant, Élodie vous invite seule en "
+            "cuisine pour vous faire tester sa nouvelle carte. La tension "
+            "monte près du plan de travail en inox."
+        )
+        reponse = (
+            "Ma journée a été typique : j'ai supervisé la mise en service de "
+            "deux nouveaux équipements en cuisine et testé une sauce piquante."
+        )
+        communs = _mots_signature(body) & _mots_signature(reponse)
+        assert len(communs) < 2
+
+    def test_reponse_fidele_suffisante(self):
+        body = (
+            "Après la fermeture du restaurant, Élodie vous invite seule en "
+            "cuisine pour vous faire tester sa nouvelle carte, un verre de "
+            "grand cru à la main. La tension monte près du plan de travail."
+        )
+        reponse = (
+            "Ferme tes yeux… ce soir, après la fermeture du restaurant, je "
+            "t'emmène en cuisine : viens goûter ma nouvelle carte, je veux "
+            "ton avis sur chaque assiette, et le grand cru est déjà frais."
+        )
+        communs = _mots_signature(body) & _mots_signature(reponse)
+        assert len(communs) >= 2
+
+    def test_insensible_accents_et_casse(self):
+        assert _mots_signature("ÉLodie DÉGUSTE") & _mots_signature("elodie deguste")

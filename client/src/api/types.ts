@@ -67,9 +67,15 @@ export interface MonProfil {
 
 export interface PhotoEntry {
   url: string;
+  /** Nom du fichier côté serveur (cible de la régénération). */
+  file?: string;
   kind: "portrait" | "photo";
   caption: string;
   ts: string;
+  /** Prompt d'origine conservé → régénération (autre seed) possible. */
+  regenerable?: boolean;
+  /** Nouvelle seed renvoyée après régénération. */
+  seed?: number;
 }
 
 export interface ChatMessage {
@@ -124,6 +130,16 @@ export const STAGE_LABELS: Record<string, string> = {
   chaleureux: "Chaleureux",
   proche: "Proche",
 };
+
+/** Ordre croissant des stades (miroir STAGE_ORDER côté serveur). */
+export const STAGE_ORDER: readonly string[] = [
+  "rejet",
+  "froid",
+  "reserve",
+  "neutre",
+  "chaleureux",
+  "proche",
+];
 
 /** Score minimal pour atteindre chaque stade (miroir compute_stage). */
 export const STAGE_THRESHOLDS: Record<string, number> = {
