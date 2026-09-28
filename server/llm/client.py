@@ -28,9 +28,14 @@ _log = logging.getLogger("amie.llm.client")
 #  Qwen : <think>…</think>)
 # --------------------------------------------------------------------------- #
 _THINK_RE = re.compile(r"<\|channel>thought\b.*?<channel\|>", re.DOTALL)
-_THINK_QWEN_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+# <think>…</think> fermé (espaces tolérés dans les balises).
+_THINK_QWEN_RE = re.compile(r"<think\s*>.*?</think\s*>", re.DOTALL)
 # Bloc thinking Qwen non refermé (coupe en fin de génération) : strip jusqu'à EOF.
-_THINK_QWEN_OPEN_RE = re.compile(r"<think>.*\Z", re.DOTALL)
+_THINK_QWEN_OPEN_RE = re.compile(r"<think\s*>.*\Z", re.DOTALL)
+# </think> orphelin : le raisonnement a été séparé par le backend (--jinja
+# le renvoie dans `reasoning_content`) mais le close-tag fuit seul en tête
+# de content. Transposé du projet D&D (fiabilité Qwen3.5 + llama.cpp).
+_THINK_QWEN_ORPHELIN_RE = re.compile(r"</?think\s*>")
 
 
 def _strip_thinking(text: str) -> str:
@@ -40,6 +45,7 @@ def _strip_thinking(text: str) -> str:
     out = _THINK_RE.sub("", text)
     out = _THINK_QWEN_RE.sub("", out)
     out = _THINK_QWEN_OPEN_RE.sub("", out)
+    out = _THINK_QWEN_ORPHELIN_RE.sub("", out)
     return out.strip()
 
 
@@ -57,7 +63,8 @@ def _safe_split(buf: str) -> tuple[str, str]:
     """
     markers = [
         "<|channel>tho", "<|channel>th", "<|channel>", "<|chan", "<|ch", "<|c", "<|",
-        "<think", "<thin", "<thi", "<th", "<t",
+        "<think>", "<think", "<thin", "<thi", "<th", "<t",
+        "</think>", "</think", "</thin", "</thi", "</th",
     ]
     for m in markers:
         if buf.endswith(m):
@@ -185,7 +192,20 @@ class LLMClient:
         data = resp.json()
         choice = data["choices"][0]
         msg = choice.get("message", {})
-        content = _strip_thinking(msg.get("content", "") or "")
+        raw_content = msg.get("content", "") or ""
+        content = _strip_thinking(raw_content)
+        if raw_content != content:
+            _log.info("thinking stripped: %d → %d chars", len(raw_content), len(content))
+        # Qwen + llama.cpp --jinja : le raisonnement peut arriver séparément
+        # dans `reasoning_content`. Si TOUTE la réponse y est passée (content
+        # vide), on le trace — la réponse visible est vide.
+        reasoning = str(msg.get("reasoning_content") or "")
+        if not content and reasoning:
+            _log.info(
+                "réponse thinking-only : %d chars dans reasoning_content, "
+                "content vide",
+                len(reasoning),
+            )
         return ChatResult(
             content=content,
             finish_reason=choice.get("finish_reason", "stop"),
