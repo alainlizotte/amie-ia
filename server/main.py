@@ -27,6 +27,7 @@ Endpoints REST :
 - POST /api/sessions            → crée une session (+ génération du portrait)
 - GET  /api/sessions/{id}       → profil public d'une session
 - DELETE /api/sessions/{id}     → supprime la session et ses photos
+- DELETE /api/mon-compte        → supprime le compte et toutes ses données (auth)
 - GET  /api/sessions/{id}/photos → album photo de la session
 - WS   /ws/{id}                 → canal chat (join/say/photo_request)
 
@@ -636,6 +637,40 @@ async def get_photo_profil(
         else "image/jpeg"
     )
     return FileResponse(chemin, media_type=mime, headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/api/mon-compte")
+async def delete_mon_compte(
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    """Supprime le compte de l'utilisateur et TOUTES ses données.
+
+    Dans l'ordre : les sessions dont il est propriétaire (fiches relationnelles,
+    albums photos, historiques de chat), puis la fiche « dating app » et la
+    photo de profil, puis le compte lui-même — ce qui invalide immédiatement
+    tous les tokens émis (voir auth.verifier_token).
+    """
+    user_key = utilisateur.strip().lower()
+    data_dir = cfg.abs(cfg.paths.data_dir)
+    # 1. Toutes les sessions appartenant à l'utilisateur.
+    for p in list(data_dir.glob("session_*.json")):
+        sid = p.stem[len("session_"):]
+        st = _state(sid)
+        profile = st.load()
+        if "_erreur" in profile:
+            continue
+        if (profile.get("meta", {}) or {}).get("user", "") != user_key:
+            continue
+        st.delete()
+        try:
+            _chat_path(sid).unlink()
+        except OSError:
+            pass
+    # 2. Fiche « dating app » + photo de profil.
+    UP.supprimer_profil(_data_dir(), utilisateur)
+    # 3. Le compte — plus aucun token ne passe après ça.
+    auth_mod.supprimer_compte(_data_dir(), utilisateur)
+    return {"ok": True}
 
 
 @app.get("/api/sessions")

@@ -114,6 +114,23 @@ def creer_utilisateur(data_dir: str, nom: str, mot_de_passe: str) -> tuple[bool,
     return True, "Compte créé."
 
 
+def supprimer_compte(data_dir: str, nom: str) -> bool:
+    """Supprime le compte de `utilisateurs.json`.
+
+    Renvoie True si une entrée a été supprimée. Comme `verifier_token`
+    recharge le fichier à chaque requête, tous les tokens émis pour ce compte
+    deviennent immédiatement invalides (pas de token fantôme).
+    """
+    utilisateurs = _charger_utilisateurs(data_dir)
+    cle = (nom or "").strip().lower()
+    cible = next((k for k in utilisateurs if k.lower() == cle), None)
+    if not cible:
+        return False
+    del utilisateurs[cible]
+    _sauver_utilisateurs(data_dir, utilisateurs)
+    return True
+
+
 # --------------------------------------------------------------------------- #
 #  Migration de l'ancien système (users.json, SHA-256 sans sel)
 # --------------------------------------------------------------------------- #

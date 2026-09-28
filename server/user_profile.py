@@ -119,6 +119,22 @@ def purger_analyse_photo(data_dir: str | os.PathLike, nom: str) -> None:
     _sauver_tous(data_dir, profils)
 
 
+def supprimer_profil(data_dir: str | os.PathLike, nom: str) -> None:
+    """Supprime la fiche « dating app » et la photo de profil de l'utilisateur."""
+    profils = _charger_tous(data_dir)
+    cle = cle_utilisateur(nom)
+    if profils.pop(cle, None) is not None:
+        _sauver_tous(data_dir, profils)
+    d = _photos_dir(data_dir)
+    for ext in _EXTENSIONS_PHOTO:
+        p = d / f"{cle}.{ext}"
+        if p.is_file():
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
 def photo_path(data_dir: str | os.PathLike, nom: str) -> Path | None:
     """Chemin de la photo de profil uploadée (None si absente)."""
     d = _photos_dir(data_dir)
