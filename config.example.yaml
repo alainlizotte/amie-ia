@@ -11,6 +11,10 @@ llm:
   # Qwen 3.5 (uncensored) : model: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M
   #   + échantillonnage recommandé (non-thinking) : temperature 0.7, top_p 0.8,
   #     options: {top_k: 20} (fusionnées à la racine du payload).
+  #   + anti-répétition recommandée : quand l'historique contient des réponses
+  #     similaires, le modèle peut boucler sur sa phrase précédente (mode
+  #     « écho », y compris après changement de stade). Pénalités validées en
+  #     test A/B contre ce comportement — voir options ci-dessous.
   temperature: 1.0
   top_p: 0.95
   max_context_tokens: 16384
@@ -33,7 +37,13 @@ llm:
   #   true  = les tokens arrivent au fil de l'eau (effet « tapé en direct ») ;
   #   false = la réponse complète arrive en un seul bloc à la fin.
   stream_to_clients: true
-  options: {}
+  # Options natives fusionnées à la racine du payload (llama.cpp).
+  # Anti-répétition conseillée pour les modèles « heretic »/uncensored :
+  options:
+    top_k: 20               # recommandation Qwen3.5
+    repeat_penalty: 1.12
+    repeat_last_n: 512
+    presence_penalty: 0.4
 
 server:
   host: 127.0.0.1

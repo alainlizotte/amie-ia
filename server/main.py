@@ -1625,17 +1625,19 @@ async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
 # --------------------------------------------------------------------------- #
 async def _extract_memories_if_due(
     sid: str, profile: dict[str, Any], user_text: str, narration: str
-) -> None:
+) -> int:
     """Extraction périodique de souvenirs (appel LLM secondaire, défensif).
 
     Un échec (JSON invalide, modèle injoignable) n'a AUCUN impact sur la
-    conversation — les souvenirs restent simplement inchangés.
+    conversation — les souvenirs restent simplement inchangés. Renvoie le
+    nombre de faits ajoutés (0 si rien) : l'appelant doit repersistancer le
+    profil quand > 0, sinon les souvenirs ne survivraient pas au tour.
     """
     cfg_ = app.state.cfg
     every = max(1, int(cfg_.relation.summarize_every_turns))
     count = int(profile.get("interaction_count", 0) or 0)
     if count % every != 0:
-        return
+        return 0
     try:
         result = await app.state.client.chat(
             [Message(
@@ -1653,8 +1655,10 @@ async def _extract_memories_if_due(
             added = await app.state.memories.add_facts(profile, facts)
             if added:
                 _log.info("[%s] %d souvenir(s) ajouté(s)", sid, added)
+                return added
     except Exception as e:                                   # noqa: BLE001
         _log.warning("[%s] extraction de souvenirs échouée (ignorée) : %s", sid, e)
+    return 0
 
 
 async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
@@ -1795,8 +1799,11 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
             st.save(profile)
 
-            # 9. Extraction périodique de souvenirs (tous les N tours).
-            await _extract_memories_if_due(sid, profile, text, narration)
+            # 9. Extraction périodique de souvenirs (tous les N tours) —
+            #    repersiste le profil si des faits ont été ajoutés, sinon ils
+            #    seraient perdus au rechargement du tour suivant.
+            if await _extract_memories_if_due(sid, profile, text, narration):
+                st.save(profile)
 
             # 10. Diffuse l'état relationnel mis à jour (barre de progression GUI).
             await hub.broadcast({
