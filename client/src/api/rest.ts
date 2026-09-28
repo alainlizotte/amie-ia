@@ -184,6 +184,15 @@ export async function apiUploadPhotoProfil(
   return jsonOrThrow(res);
 }
 
+/** Supprime définitivement le compte et toutes ses données côté serveur. */
+export async function apiSupprimerCompte(): Promise<void> {
+  const res = await fetch(`${API}/mon-compte`, {
+    method: "DELETE",
+    headers: entetes(),
+  });
+  await jsonOrThrow(res);
+}
+
 /** Charge la photo de profil (auth Bearer) → URL objet pour <img>. */
 export async function apiPhotoProfilBlob(): Promise<string> {
   const res = await fetch(`${API}/mon-profil/photo`, { headers: entetes() });

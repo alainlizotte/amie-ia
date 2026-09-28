@@ -10,9 +10,12 @@ import {
   apiMonProfil,
   apiPhotoProfilBlob,
   apiSauverMonProfil,
+  apiSupprimerCompte,
   apiUploadPhotoProfil,
+  setToken,
 } from "../api/rest";
 import type { MonProfil } from "../api/types";
+import { useAmie } from "../store";
 
 type Champs = MonProfil["profil"];
 
@@ -70,9 +73,12 @@ function champ(
 export function MonProfilPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const setUser = useAmie((s) => s.setUser);
+  const reset = useAmie((s) => s.reset);
   const [form, setForm] = useState<Champs>(VIDE);
   const [erreur, setErreur] = useState("");
   const [analyseEnCours, setAnalyseEnCours] = useState(false);
+  const [confirmerSuppression, setConfirmerSuppression] = useState(false);
   const fichierRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery({
@@ -116,6 +122,24 @@ export function MonProfilPage() {
       queryClient.invalidateQueries({ queryKey: ["photo-profil"] });
     },
     onError: (e) => setErreur(e instanceof Error ? e.message : "Erreur inconnue"),
+  });
+
+  // Suppression définitive du compte : purge serveur de toutes les données,
+  // puis déconnexion locale complète (store, token, cache React Query).
+  const supprimerCompte = useMutation({
+    mutationFn: () => apiSupprimerCompte(),
+    onSuccess: () => {
+      setConfirmerSuppression(false);
+      setUser("");
+      setToken("");
+      reset();
+      queryClient.clear();
+      navigate("/login");
+    },
+    onError: (e) => {
+      setConfirmerSuppression(false);
+      setErreur(e instanceof Error ? e.message : "Erreur inconnue");
+    },
   });
 
   function choisirFichier(e: React.ChangeEvent<HTMLInputElement>) {
@@ -241,6 +265,66 @@ export function MonProfilPage() {
       >
         {sauver.isPending ? "…" : "Enregistrer mon profil"}
       </button>
+
+      {/* Zone de danger — suppression définitive du compte */}
+      <div className="mt-8 rounded-2xl border border-red-900/50 bg-[#1a0b14]/80 p-5">
+        <h3 className="text-sm font-semibold text-red-300">Zone de danger</h3>
+        <p className="mt-1 text-sm text-red-200/70">
+          Supprimer mon compte efface définitivement ma fiche, ma photo, toutes
+          mes rencontres avec leurs messages et leurs albums. Aucun retour
+          possible.
+        </p>
+        <button
+          onClick={() => setConfirmerSuppression(true)}
+          className="mt-3 rounded-lg border border-red-800/70 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-950/60"
+        >
+          🗑️ Supprimer mon compte et mes données
+        </button>
+      </div>
+
+      {/* Confirmation de suppression (modale) */}
+      {confirmerSuppression && (
+        <div
+          className="fixed inset-0 z-50 flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmer la suppression du compte"
+        >
+          <button
+            type="button"
+            aria-label="Fermer"
+            onClick={() => setConfirmerSuppression(false)}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <div className="relative z-10 m-auto w-[88%] max-w-sm rounded-2xl border border-red-900/50 bg-[#1a0b14]/95 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-red-200">
+              Supprimer mon compte ?
+            </h3>
+            <p className="mt-2 text-sm text-rose-200/70">
+              Ta fiche, ta photo, toutes tes rencontres, leurs messages et
+              albums photos seront définitivement effacés. Cette action est
+              irréversible.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmerSuppression(false)}
+                className="rounded-lg border border-rose-800/60 px-3 py-1.5 text-sm text-rose-200 transition hover:bg-rose-900/40"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => supprimerCompte.mutate()}
+                disabled={supprimerCompte.isPending}
+                className="rounded-lg bg-red-700 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-600 disabled:opacity-40"
+              >
+                {supprimerCompte.isPending ? "Suppression…" : "Tout supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
