@@ -106,6 +106,29 @@ class TestGardeFousTenue:
         p = photo_prompt_for_stage(_CHAR, "proche")
         assert "unrestricted" in p
 
+    def test_wearing_nothing_retire_repro_beta(self):
+        """Repro beta : « wearing nothing » passait la blocklist d'origine."""
+        for stade in ("froid", "reserve", "neutre", "chaleureux"):
+            s = sanitize_scene(
+                "intimate expression, wearing nothing, minimal lighting", stade,
+            )
+            assert "wearing nothing" not in s.lower()
+            assert "nothing" not in s.lower()
+
+    def test_suggestifs_retires_stades_pudeurs(self):
+        for stade in ("rejet", "froid", "reserve", "neutre"):
+            s = sanitize_scene(
+                "elegant lingerie, sensual pose, at home", stade,
+            )
+            bas = s.lower()
+            for mot in ("lingerie", "sensual"):
+                assert mot not in bas
+
+    def test_suggestifs_autorises_chaleureux(self):
+        # Chaleureux autorise la lingerie (jamais nu) : pas de retrait.
+        s = sanitize_scene("elegant lingerie, at home", "chaleureux")
+        assert "lingerie" in s.lower()
+
 
 class TestSanitizeScene:
     def test_nettoie_guillemets_et_lignes(self):

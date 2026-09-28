@@ -126,3 +126,30 @@ STAGE_INSTRUCTIONS = {
 def get_stage_instruction(stage: str) -> str:
     """Retourne la consigne pour un stade donné (chaîne vide si inconnu)."""
     return STAGE_INSTRUCTIONS.get(stage, "")
+
+
+# --------------------------------------------------------------------------- #
+#  Refus courts du stade « rejet » — appliqués DÉTERMINISTEMENT côté serveur.
+#  Les petits modèles ignorent souvent la consigne « refus court varié » :
+#  au stade rejet la réponse du LLM est REMPLACÉE par l'une de ces phrases
+#  (rotation + anti-répétition, voir main._refus_rejet). Le LLM ne peut
+#  pas contourner : c'est du post-traitement Python.
+# --------------------------------------------------------------------------- #
+REFUS_REJET = [
+    "Va-t'en.",
+    "Ne me parle plus.",
+    "Je n'ai rien à te dire.",
+    "Laisse-moi tranquille.",
+    "Non.",
+    "Dégage.",
+    "Fiche le camp.",
+    "Tu me fatigues.",
+    "Inutile d'insister.",
+    "C'est terminé entre nous.",
+    "Pas de conversation.",
+    "Hors de question.",
+    "Tu perds ton temps.",
+    "Je ne veux pas.",
+    "Ce n'est pas négociable.",
+    "Arrête de m'écrire.",
+]

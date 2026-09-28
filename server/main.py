@@ -71,7 +71,7 @@ from .relation.memory import (
     cosine,
     parse_facts,
 )
-from .relation.scoring import apply_time_decay, compute_delta
+from .relation.scoring import _sans_accents, apply_time_decay, compute_delta
 from .relation.state import RelationState
 from .relation.stages import compute_stage
 from . import user_profile as UP
@@ -606,10 +606,26 @@ async def _analyser_photo_profil(utilisateur: str) -> None:
             "pas d'identifier la personne et n'invente rien qui ne soit pas "
             "visible."
         )
-        desc = await asyncio.wait_for(
-            llm.decrire_image(data_url, prompt, max_tokens=280),
-            timeout=300.0,
-        )
+        # Tentative + 1 recharge : le premier appel peut frapper le serveur
+        # LLM pendant qu'il (re)charge le modèle (gestion VRAM, sommeil
+        # après inactivité) et recevoir un 500 transient.
+        desc = ""
+        for tentative in range(2):
+            try:
+                desc = await asyncio.wait_for(
+                    llm.decrire_image(data_url, prompt, max_tokens=280),
+                    timeout=300.0,
+                )
+                break
+            except Exception as e:
+                if tentative == 0:
+                    _log.info(
+                        "[profil] analyse vision échouée (tentative 1/2), "
+                        "nouvel essai après délai : %s", e,
+                    )
+                    await asyncio.sleep(8.0)
+                else:
+                    raise
         if not desc:
             raise ValueError("description vide")
         UP.sauver_profil(_data_dir(), utilisateur, {"photo_description": desc})
@@ -813,13 +829,108 @@ async def session_photos(
     photos = [
         {
             "url": st.photo_url(p.get("file", "")),
+            "file": p.get("file", ""),
             "kind": p.get("kind", "photo"),
             "caption": p.get("caption", ""),
             "ts": p.get("ts", ""),
+            # Régénération possible : prompt d'origine conservé.
+            "regenerable": bool(p.get("prompt")),
         }
         for p in reversed(profile.get("photos", []) or [])
     ]
     return {"photos": photos}
+
+
+@app.post("/api/sessions/{sid}/photos/regenerer")
+async def regenerer_photo(
+    sid: str,
+    payload: dict[str, Any],
+    utilisateur: str = Depends(utilisateur_courant),
+) -> dict[str, Any]:
+    """Régénère une photo de l'album — même scène, NOUVELLE seed.
+
+    Cas d'usage : l'image générée est ratée (artefacts, anatomie douteuse).
+    Le prompt d'origine, conservé avec la photo à sa création, est réexécuté
+    avec une graine aléatoire fraîche ; l'entrée de l'album est remplacée
+    (même légende). Si le prompt n'est pas connu (photos d'avant cette
+    fonctionnalité), il est reconstruit : portrait → fiche du personnage ;
+    photo → directeur photo au stade ACTUEL (gate habituelle appliquée).
+
+    Sérialisée sur hub.turn_lock (arbitrage GPU + écriture profil).
+    """
+    image = getattr(app.state, "image", None)
+    if image is None:
+        raise HTTPException(status_code=503, detail="Génération d'images désactivée.")
+
+    ancien = str(payload.get("file") or "")
+    if not ancien or "/" in ancien or "\\" in ancien or ".." in ancien:
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
+
+    profile = _own_session(sid, utilisateur)
+    st = _state(sid)
+    hub = _hub(sid)
+
+    entree = next(
+        (p for p in (profile.get("photos", []) or []) if p.get("file") == ancien),
+        None,
+    )
+    if entree is None:
+        raise HTTPException(status_code=404, detail="Photo introuvable dans l'album.")
+
+    kind = entree.get("kind", "photo")
+    character = profile.get("character", {})
+    prompt_stocke = str(entree.get("prompt") or "")
+
+    # Prompt de régénération : stocké d'abord, sinon reconstruction.
+    if prompt_stocke:
+        prompt = prompt_stocke
+    elif kind == "portrait":
+        prompt = img_helpers.portrait_prompt(character)
+    else:
+        stage = profile.get("relationship_stage", "froid")
+        refusal = img_helpers.REFUSALS_BY_STAGE.get(stage)
+        if refusal:
+            raise HTTPException(status_code=403, detail=refusal)
+        scene = await _scene_de_la_conversation(sid, character, stage, "")
+        prompt = img_helpers.photo_prompt_for_stage(character, stage, "", scene)
+
+    async with hub.turn_lock:
+        # Nouveau fichier (et non écrasement) : l'URL change → aucun souci
+        # de cache navigateur, et les bulles du chat référençant l'ancienne
+        # image restent valides (l'ancien fichier est conservé sur disque).
+        dest_dir = st.photos_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        prefixe = "portrait" if kind == "portrait" else "photo"
+        fname = f"{prefixe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        dest = dest_dir / fname
+
+        path_seed = await img_helpers.generer_image(image, kind, prompt, str(dest))
+        if path_seed is None:
+            raise HTTPException(
+                status_code=502,
+                detail="La régénération a échoué (ComfyUI injoignable ou erreur de génération).",
+            )
+        _path, seed = path_seed
+
+        profile = st.load()  # rechargé : un tour a pu s'exécuter pendant l'attente
+        maj = st.maj_photo(profile, ancien, fname, prompt, seed)
+        if maj is None:
+            raise HTTPException(status_code=404, detail="Photo introuvable dans l'album.")
+        st.save(profile)
+
+    _log.info("[photo][regen %s] %s → %s (seed %s)", sid, ancien, fname, seed)
+    return {
+        "ok": True,
+        "photo": {
+            "url": st.photo_url(fname),
+            "file": fname,
+            "kind": kind,
+            "caption": maj.get("caption", ""),
+            "ts": maj.get("ts", ""),
+            "regenerable": True,
+            "seed": seed,
+        },
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -874,24 +985,30 @@ async def _generate_portrait(sid: str) -> None:
                 "type": "tool_event",
                 "event": {"type": "image_pending", "msg": img_helpers.MSG_PENDING_PORTRAIT},
             })
-            path = await img_helpers.generer_image(image, "portrait", prompt, str(dest))
-            if path is None:
+            path_seed = await img_helpers.generer_image(
+                image, "portrait", prompt, str(dest),
+            )
+            if path_seed is None:
                 _log.warning("[portrait] échec génération pour %s (voir logs image)", sid)
                 await hub.broadcast({
                     "type": "tool_event",
                     "event": {"type": "error", "msg": "⚠️ Génération du portrait impossible (ComfyUI injoignable ?)."},
                 })
                 return
+            _path, seed = path_seed
             if cache is not None:
                 try:
                     cache.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(dest, cache)
                 except OSError:
                     _log.warning("[portrait] cache non écrit pour %s", cache.name)
+        else:
+            seed = None  # portrait du cache : seed d'origine inconnue
 
         profile = st.load()
         st.add_photo(profile, dest.name, "portrait",
-                     img_helpers.caption_for("portrait", "", character.get("name", "")))
+                     img_helpers.caption_for("portrait", "", character.get("name", "")),
+                     prompt=prompt, seed=seed)
         st.save(profile)
         await hub.broadcast({
             "type": "tool_event",
@@ -997,17 +1114,18 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
         fname = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         dest = dest_dir / fname
 
-        path = await img_helpers.generer_image(image, "photo", prompt, str(dest))
-        if path is None:
+        path_seed = await img_helpers.generer_image(image, "photo", prompt, str(dest))
+        if path_seed is None:
             await hub.broadcast({
                 "type": "tool_event",
                 "event": {"type": "error", "msg": "⚠️ La génération de la photo a échoué."},
             })
             return
+        _path, seed = path_seed
 
         profile = st.load()
         caption = img_helpers.caption_for("photo", stage, character.get("name", ""))
-        st.add_photo(profile, fname, "photo", caption)
+        st.add_photo(profile, fname, "photo", caption, prompt=prompt, seed=seed)
         st.save(profile)
         await hub.broadcast({
             "type": "tool_event",
@@ -1254,7 +1372,57 @@ def _cut_meta_block(text: str) -> str:
         if _looks_like_meta_line(ln):
             break
         out.append(ln)
+    # Artefact de fuite coupée : une ligne réduite à un marqueur de bloc de
+    # code (« ``` », « ```text »…) n'a aucun sens affichée seule — on la
+    # retire. Si TOUTE la réponse était un tel artefact, le résultat est
+    # vide et le garde-fou « jamais de bulle vide » prend le relais.
+    out = [ln for ln in out if not re.match(r"^\s*```[A-Za-z0-9_-]*\s*$", ln)]
     return "\n".join(out).strip()
+
+
+# Longueur maximale d'un message utilisateur accepté par le chat.
+# Les vraies messageries plafonnent aussi (souvent ~2000) : au-delà, le
+# texte gonfle l'historique persisté, le contexte du LLM et le stockage.
+TEXTE_MAX = 4000
+
+# Mots français courants, sans valeur narrative — exclus des mots signature
+# des scénarios (sinon « pendant », « toujours »… compteraient comme preuve
+# d'intégration).
+_STOPWORDS_SIGNATURE = frozenset({
+    "pendant", "maintenant", "toujours", "ensuite", "quelques", "personne",
+    "moment", "beaucoup", "vraiment", "aujourdhui", "demain", "apres",
+    "premiere", "premier", "nouvelle", "nouveau", "nouveaux", "maison",
+    "entre", "etre", "avec", "comme", "leur", "dont", "cette", "petite",
+})
+
+
+def _mots_signature(texte: str) -> set[str]:
+    """Mots « signature » d'un texte : mots de 6+ lettres, sans accents,
+    hors vocabulaire générique. Sert à vérifier qu'une réponse RAconte
+    réellement un scénario (et pas juste qu'elle parle du même thème)."""
+    na = _sans_accents((texte or "").lower())
+    return {
+        m for m in re.findall(r"[a-z]{6,}", na)
+        if m not in _STOPWORDS_SIGNATURE
+    }
+
+
+def _refus_rejet(hub_hist, profile: dict[str, Any]) -> str:
+    """Phrase de refus court pour le stade « rejet » — rotation déterministe.
+
+    Indexe sur le nombre d'interactions (varie d'un tour à l'autre) et
+    évite de répéter le refus exactement identique au précédent.
+    """
+    from .relation.stages import REFUS_REJET
+
+    idx = int(profile.get("interaction_count", 0) or 0) % len(REFUS_REJET)
+    dernier = next(
+        (m.content for m in reversed(hub_hist.history) if m.role == "assistant"),
+        "",
+    )
+    if REFUS_REJET[idx] == dernier:
+        idx = (idx + 1) % len(REFUS_REJET)
+    return REFUS_REJET[idx]
 
 
 def _norm_txt(s: str) -> str:
@@ -1630,14 +1798,15 @@ async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
             fname = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             dest = dest_dir / fname
 
-            path = await img_helpers.generer_image(image, "photo", prompt, str(dest))
-            if path is None:
+            path_seed = await img_helpers.generer_image(image, "photo", prompt, str(dest))
+            if path_seed is None:
                 _log.warning("[photo][initiative %s] génération échouée", sid)
                 return
+            _path, seed = path_seed
 
             profile = st.load()
             caption = img_helpers.caption_for("photo", stage, name)
-            st.add_photo(profile, fname, "photo", caption)
+            st.add_photo(profile, fname, "photo", caption, prompt=prompt, seed=seed)
             st.save(profile)
             await hub.broadcast({
                 "type": "tool_event",
@@ -1698,14 +1867,18 @@ async def _extract_memories_if_due(
 
 async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
     """Pipeline complet d'un tour — aucune intervention du LLM dans la mécanique."""
-    if not text.strip():
+    # Plafond de longueur : au-delà, le texte est tronqué (les vraies
+    # messageries limitent aussi). Protège l'historique, le contexte LLM
+    # et le stockage d'un message pathologique.
+    text = (text or "").strip()[:TEXTE_MAX]
+    if not text:
         return
     rcfg = cfg.relation
     st = _state(sid)
     hub_hist = ChatHistory(sid)  # léger : hydrate depuis le disque
 
     # 1. Mémorise + echo du message utilisateur.
-    hub_hist.append("user", text.strip())
+    hub_hist.append("user", text)
     await hub.broadcast({"type": "player", "text": text})
     await hub.broadcast({"type": "status", "description": f"écrit…"})
     await hub.broadcast({"type": "typing", "on": True})
@@ -1768,7 +1941,14 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
             # 6. Génération (aucun tool exposé au modèle) — avec ou sans
             # streaming vers le(s) client(s) (llm.stream_to_clients).
-            if cfg.llm.stream_to_clients:
+            # Stade « rejet » : AUCUN appel LLM — la consigne « refus court
+            # varié » est trop souvent ignorée par le modèle, la mécanique
+            # est donc appliquée déterministe côté serveur (phrase de refus
+            # en rotation, anti-répétition). Le delta d'humeur est ensuite
+            # calculé normalement : le tour suivant reflète le nouveau score.
+            if stage == "rejet":
+                narration = ""
+            elif cfg.llm.stream_to_clients:
                 narration_parts: list[str] = []
                 async for token in app.state.client.stream_chat(messages):
                     narration_parts.append(token)
@@ -1782,6 +1962,8 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             # Anti-fuite : coupe toute analyse/instruction interne que le
             # modèle aurait ajoutée en fin de réponse.
             narration = _cut_meta_block(narration)
+            if stage == "rejet":
+                narration = _refus_rejet(hub_hist, profile)
             if not narration:
                 narration = "…"  # garde-fou : jamais de bulle vide
 
@@ -1792,6 +1974,7 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             delta = compute_delta(
                 text, narration, stage,
                 delta_max=rcfg.delta_max, delta_min=rcfg.delta_min,
+                gain_multiplier=rcfg.gain_multiplier,
             )
             old_stage = stage
             st.set_score(
@@ -1809,6 +1992,12 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             # 8. Consommation du scénario injecté — similarité cosinus entre
             #    le corps de l'event et la réponse (embeddings llamaembed),
             #    avec consommation forcée après event_max_attempts tours.
+            #    Garde-fou anti-consommation-abusive (bug beta) : une réponse
+            #    simplement THÉMATIQUEMENT proche (même univers — cuisine,
+            #    travail…) suffisait à consommer un scénario jamais raconté.
+            #    La similarité ne consomme donc que si la réponse reprend au
+            #    moins 2 MOTS SIGNATURE du corps du scénario ; sinon, on
+            #    retente au tour suivant (consommation forcée inchangée).
             consumed_now = False
             if pending:
                 eid = pending.get("event_id", "")
@@ -1825,7 +2014,12 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                         sim = 0.0
                 else:
                     sim = rcfg.event_consume_similarity  # mode dégradé : consomme
-                if sim >= rcfg.event_consume_similarity or attempts >= rcfg.event_max_attempts:
+                signatures = _mots_signature(pending.get("body", "")) & _mots_signature(narration)
+                integre = len(signatures) >= 2
+                if (
+                    (sim >= rcfg.event_consume_similarity and integre)
+                    or attempts >= rcfg.event_max_attempts
+                ):
                     P.mark_event_consumed(profile, eid)
                     consumed_now = True
                 else:

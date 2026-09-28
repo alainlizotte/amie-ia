@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server.relation.stages import (  # noqa: E402
+    REFUS_REJET,
     STAGE_INSTRUCTIONS,
     STAGE_ORDER,
     can_play_stage,
@@ -61,3 +62,13 @@ class TestCanPlayStage:
             assert st in STAGE_INSTRUCTIONS
             instr = get_stage_instruction(st)
             assert isinstance(instr, str) and instr
+
+
+class TestRefusRejet:
+    def test_liste_non_vide_et_courte(self):
+        assert len(REFUS_REJET) >= 10
+        for r in REFUS_REJET:
+            assert 3 <= len(r) <= 60  # refus courts, pas de paragraphes
+
+    def test_sans_doublon(self):
+        assert len(REFUS_REJET) == len(set(REFUS_REJET))

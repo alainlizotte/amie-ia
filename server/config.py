@@ -66,8 +66,16 @@ class RelationConfig:
     """Paramètres de la mécanique relationnelle — 100 % côté serveur,
     indépendants du LLM (le modèle ne peut ni les contourner ni les calculer)."""
     default_score: int = 100          # deux inconnus qui se rencontrent
-    delta_max: int = 16               # plafond de progression par message
+    delta_max: int = 24               # plafond de progression par message
+                                      # (doit couvrir le meilleur gain possible :
+                                      # avec gain_multiplier 1.5 → 9+9+12 = 30,
+                                      # capé à 24 comme l'ancien 16/20 l'était)
     delta_min: int = -20              # plancher de régression par message
+    # Multiplicateur des POINTS GAGNÉS (compliments, politesse, excuses,
+    # engagement, plancher neutre) — 1.5 = gains +50 %, progression des
+    # stades ~50 % plus rapide. Les malus (insultes, insistance) et les
+    # plafonds ne sont PAS multipliés.
+    gain_multiplier: float = 1.0
     cooldown_hours: float = 24.0      # délai min entre deux scénarios injectés
     event_max_attempts: int = 3       # tours max avant consommation forcée d'un event
     event_consume_similarity: float = 0.55   # similarité cosinus event ↔ réponse

@@ -18,6 +18,7 @@ Le score de relation ne dépend donc JAMAIS de l'appréciation du modèle.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 # --------------------------------------------------------------------------- #
 #  Mots-clés (sources canoniques : functions/_shared.py du projet d'origine)
@@ -80,18 +81,33 @@ def _normalize(s: str) -> str:
     return s
 
 
+def _sans_accents(s: str) -> str:
+    """Retire les diacritiques (« génial » → « genial ») après normalisation.
+
+    Permet un appariement insensible aux accents dans les deux sens : un
+    joueur qui écrit « genial », « desole » ou « nulle » sans accents est
+    évalué comme s'il avait écrit les mots accentués du barème.
+    """
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
 # Patterns compilés avec frontières de mots — indispensable : sans \b,
 # « con » matcherait « content », « nul » matcherait « annulaire », etc.
 _KW_CACHE: dict[str, re.Pattern] = {}
 
 
 def _kw_hit(kw: str, text: str) -> bool:
-    """True si le mot-clé apparaît comme mot entier dans le texte."""
+    """True si le mot-clé apparaît comme mot entier dans le texte.
+
+    L'appariement est insensible aux accents : le mot-clé et le texte sont
+    comparés sans diacritiques (le pattern est compilé une seule fois).
+    """
     pat = _KW_CACHE.get(kw)
     if pat is None:
-        pat = re.compile(rf"\b{re.escape(kw)}\b")
+        pat = re.compile(rf"\b{re.escape(_sans_accents(kw))}\b")
         _KW_CACHE[kw] = pat
-    return bool(pat.search(text))
+    return bool(pat.search(_sans_accents(text)))
 
 
 def compute_delta(
@@ -100,15 +116,30 @@ def compute_delta(
     current_stage: str,
     delta_max: int = 16,
     delta_min: int = -20,
+    gain_multiplier: float = 1.0,
 ) -> int:
     """Calcule le delta de score d'un tour (mots-clés + patterns heuristiques).
 
+    `gain_multiplier` multiplie les POINTS GAGNÉS uniquement (compliments,
+    « tu es + adjectif », excuses, politesse, engagement, plancher neutre) —
+    1.5 = gains +50 %, passages de stades ~50 % plus rapides. Les malus ne
+    sont pas multipliés. Chaque gain est arrondi au plus proche.
+
     Renvoie un entier borné dans [delta_min, delta_max].
     """
+    try:
+        m = max(0.0, float(gain_multiplier))
+    except (TypeError, ValueError):
+        m = 1.0
+
+    def _gain(pts: int) -> int:
+        # Arrondi arithmétique (round() ferait du banker's rounding : 4.5 → 4).
+        return int(pts * m + 0.5)
+
     delta = 0
     user_lower = _normalize(user_msg)
 
-    # 1) Insultes directes — malus forcé, même dirigé.
+    # 1) Insultes directes — malus forcé, même dirigé (NON multiplié).
     for kw in NEGATIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
             if re.search(r"\b(tu es|t'es|espece de|espèce de|sale)\b", user_lower):
@@ -119,23 +150,25 @@ def compute_delta(
     # 2) Compliments / remerciements.
     for kw in POSITIVE_KEYWORDS:
         if _kw_hit(kw, user_lower):
-            delta += 6
+            delta += _gain(6)
 
-    # 3) « tu es [adjectif positif] » → +8 (un seul bonus par message).
+    # 3) « tu es [adjectif positif] » → +8 de base (un seul bonus par message).
+    #    Comparaison sans accents : « t'es vraiment douee » matche « douée ».
+    user_na = _sans_accents(user_lower)
     for adj in POSITIVE_ADJECTIVES:
         pattern = (
             r"\b(tu es|t'es|vous etes|vous êtes)\b[^.?!]{0,30}\b"
-            + re.escape(adj)
+            + re.escape(_sans_accents(adj))
             + r"\b"
         )
-        if re.search(pattern, user_lower):
-            delta += 8
+        if re.search(pattern, user_na):
+            delta += _gain(8)
             break
 
-    # 4) Excuses sincères → +6 (un seul bonus).
+    # 4) Excuses sincères → +6 de base (un seul bonus).
     for ap_kw in APOLOGY_KEYWORDS:
         if _kw_hit(ap_kw, user_lower):
-            delta += 6
+            delta += _gain(6)
             break
 
     # 5) Insistance inappropriée à un stade bas → -6 (malus inchangé).
@@ -145,22 +178,23 @@ def compute_delta(
                 delta -= 6
             break
 
-    # 6) Politesse neutre → +3.
+    # 6) Politesse neutre → +3 de base.
     for neu_kw in NEUTRAL_POSITIVE_KEYWORDS:
         if _kw_hit(neu_kw, user_lower):
-            delta += 3
+            delta += _gain(3)
             break
 
-    # 7) Bonus d'engagement (message détaillé > 200 caractères) → +3.
+    # 7) Bonus d'engagement (message détaillé > 200 caractères) → +3 de base.
     if isinstance(user_msg, str) and len(user_msg) > 200:
-        delta += 3
+        delta += _gain(3)
 
     # 8) Filet « message neutre » : une conversation ordinaire (aucun mot-clé
-    #    positif ni négatif) fait progresser la relation d'au moins 1 point —
-    #    discuter reste un signe d'intérêt. Les deltas négatifs (insultes,
-    #    messages inappropriés) ne sont PAS rattrapés.
+    #    positif ni négatif) fait progresser la relation d'au moins 1 point
+    #    (base, avant multiplicateur) — discuter reste un signe d'intérêt.
+    #    Les deltas négatifs (insultes, messages inappropriés) ne sont PAS
+    #    rattrapés.
     if delta == 0:
-        delta = 1
+        delta = _gain(1)
 
     return max(delta_min, min(delta_max, delta))
 

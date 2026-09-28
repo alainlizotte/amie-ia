@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { ChatSocket } from "../api/ws";
+import { STAGE_LABELS, STAGE_ORDER } from "../api/types";
 import { uid, useAmie } from "../store";
 import { playMessageSound } from "../utils/sound";
 
@@ -116,12 +117,17 @@ export function useChatSocket(sid: string | undefined) {
               caption: msg.event.caption,
             });
             patchProfile({ portrait_url: msg.event.image, photos_count: (useAmie.getState().profile?.photos_count ?? 0) + 1 });
+            // La génération est terminée : lève l'indicateur d'attente
+            // (« 📸 Photo en cours de génération… » sinon reste à l'écran).
+            setStatus("");
           } else if (msg.event.type === "info" || msg.event.type === "error") {
             addMessage({
               id: uid(),
               role: "info",
               content: msg.event.msg,
             });
+            // Refus/erreur photo : l'attente éventuelle est terminée aussi.
+            setStatus("");
           }
           // image_pending : indicateur visuel via status.
           else if (msg.event.type === "image_pending") {
@@ -129,7 +135,9 @@ export function useChatSocket(sid: string | undefined) {
           }
           break;
 
-        case "profile":
+        case "profile": {
+          // Direction de l'évolution lue AVANT le patch (ancien stade).
+          const stadeAvant = useAmie.getState().profile?.stage;
           patchProfile({
             score: msg.score,
             stage: msg.stage,
@@ -137,14 +145,17 @@ export function useChatSocket(sid: string | undefined) {
             events_consumed: msg.events_consumed,
             unanswered_messages: msg.unanswered_messages,
           });
-          if (msg.stage_changed) {
-            addMessage({
-              id: uid(),
-              role: "info",
-              content: `💗 Votre relation évolue : nouveau stade atteint !`,
-            });
+          if (msg.stage_changed && stadeAvant && stadeAvant !== msg.stage) {
+            const iAv = STAGE_ORDER.indexOf(stadeAvant);
+            const iAp = STAGE_ORDER.indexOf(msg.stage);
+            const content =
+              iAp > iAv
+                ? "💗 Votre relation évolue : nouveau stade atteint !"
+                : `💔 La relation s'est refroidie… vous êtes désormais au stade « ${STAGE_LABELS[msg.stage] ?? msg.stage} ».`;
+            addMessage({ id: uid(), role: "info", content });
           }
           break;
+        }
       }
     });
 

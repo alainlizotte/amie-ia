@@ -3,14 +3,28 @@
 
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { apiPhotos } from "../api/rest";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiPhotos, apiRegenererPhoto, apiSession } from "../api/rest";
 import { useAmie } from "../store";
 
 export function AlbumPage() {
   const { sid } = useParams<{ sid: string }>();
-  const characterName = useAmie((s) => s.profile?.character.name ?? "");
+  const queryClient = useQueryClient();
+  // Nom du personnage : source de vérité = l'API de la session (le store
+  // peut contenir une AUTRE rencontre si on arrive par navigation directe,
+  // ou rien du tout après un chargement froid de la page).
+  const nomStore = useAmie((s) => s.profile?.character.name ?? "");
+  const { data: session } = useQuery({
+    queryKey: ["session", sid],
+    queryFn: () => apiSession(sid!),
+    enabled: !!sid,
+    retry: 1,
+  });
+  const characterName = session?.character?.name || nomStore;
   const [selected, setSelected] = useState<number | null>(null);
+  // Fichier en cours de régénération (indicateur + boutons désactivés).
+  const [regenEnCours, setRegenEnCours] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["photos", sid],
@@ -19,6 +33,36 @@ export function AlbumPage() {
   });
 
   const photos = data?.photos ?? [];
+
+  const regen = useMutation({
+    mutationFn: (file: string) => apiRegenererPhoto(sid!, file),
+    onSuccess: (r) => {
+      setRegenEnCours(null);
+      setMessage(
+        r.photo?.seed !== undefined
+          ? `✨ Photo régénérée (seed ${r.photo.seed}).`
+          : "✨ Photo régénérée.",
+      );
+      queryClient.invalidateQueries({ queryKey: ["photos", sid] });
+    },
+    onError: (e) => {
+      setRegenEnCours(null);
+      setMessage(e instanceof Error ? e.message : "Régénération impossible.");
+    },
+  });
+
+  function demanderRegeneration(file: string | undefined) {
+    if (!file || regenEnCours) return;
+    if (
+      window.confirm(
+        "Régénérer cette photo avec une nouvelle seed ? L'image actuelle sera remplacée dans l'album (la génération peut prendre jusqu'à 60 s).",
+      )
+    ) {
+      setMessage("");
+      setRegenEnCours(file);
+      regen.mutate(file);
+    }
+  }
 
   // Ferme la visionneuse quand on change de session.
   useEffect(() => setSelected(null), [sid]);
@@ -69,34 +113,57 @@ export function AlbumPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {photos.map((p, i) => (
-            <figure
-              key={p.url}
-              className="overflow-hidden rounded-xl border border-rose-900/40 bg-[#1a0b14]"
-            >
-              <button
-                type="button"
-                onClick={() => setSelected(i)}
-                aria-label={
-                  p.caption
-                    ? `Agrandir : ${p.caption}`
-                    : "Agrandir la photo"
-                }
-                className="group block w-full cursor-zoom-in"
+        <>
+          {message && (
+            <p className="mb-4 rounded-lg border border-rose-900/50 bg-[#24101c]/80 px-4 py-2 text-center text-sm text-rose-100/80">
+              {message}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            {photos.map((p, i) => (
+              <figure
+                key={p.url}
+                className="relative overflow-hidden rounded-xl border border-rose-900/40 bg-[#1a0b14]"
               >
-                <img
-                  src={p.url}
-                  alt={p.caption || "photo"}
-                  className="aspect-square w-full object-cover transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110"
-                />
-              </button>
-              <figcaption className="px-2 py-1.5 text-center text-xs text-rose-200/50">
-                {p.caption || (p.kind === "portrait" ? "Photo de profil" : "Souvenir")}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(i)}
+                  aria-label={
+                    p.caption
+                      ? `Agrandir : ${p.caption}`
+                      : "Agrandir la photo"
+                  }
+                  className="group block w-full cursor-zoom-in"
+                >
+                  <img
+                    src={p.url}
+                    alt={p.caption || "photo"}
+                    className={
+                      "aspect-square w-full object-cover transition duration-200 group-hover:scale-[1.03] group-hover:brightness-110" +
+                      (regenEnCours === p.file ? " opacity-40" : "")
+                    }
+                  />
+                </button>
+                {/* Régénération (autre seed) — photos issues d'une génération */}
+                {p.regenerable && p.file && (
+                  <button
+                    type="button"
+                    onClick={() => demanderRegeneration(p.file)}
+                    disabled={!!regenEnCours}
+                    title="Régénérer cette image avec une autre seed (remplace la photo actuelle)"
+                    aria-label={`Régénérer : ${p.caption || "photo"}`}
+                    className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-lg text-white/90 transition hover:bg-rose-600/80 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {regenEnCours === p.file ? "⏳" : "🔄"}
+                  </button>
+                )}
+                <figcaption className="px-2 py-1.5 text-center text-xs text-rose-200/50">
+                  {p.caption || (p.kind === "portrait" ? "Photo de profil" : "Souvenir")}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Visionneuse plein écran */}
@@ -132,6 +199,23 @@ export function AlbumPage() {
           >
             ✕
           </button>
+
+          {/* Régénération : même scène, nouvelle seed (image ratée ?). */}
+          {photos[selected].regenerable && photos[selected].file && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                demanderRegeneration(photos[selected].file);
+              }}
+              disabled={!!regenEnCours}
+              className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-rose-600/80 disabled:cursor-wait disabled:opacity-60"
+            >
+              {regenEnCours === photos[selected].file
+                ? "⏳ Régénération…"
+                : "🔄 Régénérer (autre seed)"}
+            </button>
+          )}
 
           {photos.length > 1 && (
             <>

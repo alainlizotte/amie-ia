@@ -183,7 +183,13 @@ class PromptBuilder:
 
     # ------------------------------------------------------------------ #
     def build_event_block(self, pending_event: Optional[dict[str, Any]]) -> str:
-        """Injection discrète du scénario en attente (déjà filtré par gates)."""
+        """Injection du scénario en attente (déjà filtré par gates).
+
+        Formulation IMPÉRATIVE : les petits modèles ignoraient la consigne
+        douce (« introduis naturellement ») et répondaient à côté — le
+        scénario était alors consommé sans jamais être raconté. La réponse
+        doit être CENTRÉE sur la scène, vécue à la première personne.
+        """
         if not pending_event:
             return ""
         tone_hint = {
@@ -195,13 +201,18 @@ class PromptBuilder:
             "finale": "scène d'aboutissement finale de la relation",
         }.get(pending_event.get("tone"), "")
         return (
-            "[EVENT DISPONIBLE POUR CETTE SESSION — introduis NATURELLEMENT la "
-            f"situation ci-dessous dans ta réponse comme une péripétie vécue "
-            f"par ton personnage ({tone_hint}). Ne la cite JAMAIS comme une "
-            "« mission », un « scénario » ou un devoir ; n'écris jamais son "
-            "identifiant. Intègre-la comme un souvenir récent ou une situation "
-            "actuelle que tu racontes ou vis.\n"
-            f"EVENT ({pending_event.get('tone')}, lettre="
+            "[SCÈNE À RACONTER — OBLIGATOIRE POUR CETTE RÉPONSE\n"
+            f"Ta réponse DOIT tourner autour de la situation ci-dessous : tu "
+            f"la VIS ou tu viens de la vivre, à la première personne, comme "
+            f"un événement récent de TA vie ({tone_hint}).\n"
+            "RACONTE-la avec des détails concrets tirés de la description "
+            "(lieu, objets, personnes présentes, sensations, ce qui s'est "
+            "passé, ce que tu as ressenti) et implique l'utilisateur "
+            "(demande son avis, invite-le, réagis avec lui).\n"
+            "INTERDIT : répondre à côté du sujet, changer de sujet, ignorer "
+            "cette scène, la citer comme une « mission » ou un « scénario », "
+            "écrire son identifiant.\n"
+            f"SCÈNE ({pending_event.get('tone')}, lettre="
             f"{pending_event.get('letter')}) : « {pending_event.get('title')} » "
             f"— {pending_event.get('body', '')}]"
         )
@@ -216,6 +227,11 @@ class PromptBuilder:
         "le bouton dédié. Si on te demande une photo dans le texte, réponds "
         "naturellement selon ton stade (accepte ou décline) — le serveur gère "
         "le reste.\n"
+        "- N'annonce JAMAIS que tu vas envoyer une photo ou un selfie (« je "
+        "t'envoie ça », « attends une photo »…) : l'envoi est décidé par un "
+        "système séparé, indépendant de ton texte. Si tu acceptes une "
+        "demande, dis seulement que tu acceptes — la photo arrivera "
+        "d'elle-même si le serveur la déclenche.\n"
         "- Ta réponse visible doit être UNIQUEMENT ce que ton personnage "
         "dirait naturellement, à la façon d'un texto réaliste. Rien d'autre."
     )

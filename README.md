@@ -50,7 +50,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
 | 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée — portraits originaux **versionnés dans le dépôt** (un clone suffit, pas de régénération ComfyUI) |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
-| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire |
+| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
 | 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit (1 message/jour max) ; sans réponse avant le suivant : **-15 points** de relation — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence : ennui → inquiétude → tristesse → frustration → colère blessée |
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
@@ -89,22 +89,26 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
 
 - **Score relationnel** (100 au départ) ajusté après chaque message par un
   moteur mots-clés/patterns ; stades : rejet → froid → réservé → neutre →
-  chaleureux → proche. Barème actuel (`server/relation/scoring.py`) :
+  chaleureux → proche. Barème de base (`server/relation/scoring.py`),
+  multiplié par `relation.gain_multiplier` (1.5 par défaut — gains +50 %,
+  malus inchangés) :
 
-  | Signal | Points |
-  |---|---|
-  | Message neutre (aucun signal détecté) | **+1** (plancher garanti — discuter fait toujours progresser) |
-  | Politesse neutre (salut, ça va…) | +3 |
-  | Engagement (message > 200 caractères) | +3 |
-  | Compliment / remerciement (par mot-clé) | +6 |
-  | Excuses sincères | +6 |
-  | « tu es + [adjectif positif] » | +8 (1× par message) |
-  | Insistance inappropriée à un stade bas | -6 |
-  | Insulte non dirigée | -10 |
-  | Insulte dirigée (« tu es… », « sale… ») | -16 |
+  | Signal | Base | Effectif (×1.5) |
+  |---|---|---|
+  | Message neutre (aucun signal détecté) | **+1** (plancher garanti — discuter fait toujours progresser) | +2 |
+  | Politesse neutre (salut, ça va…) | +3 | +5 |
+  | Engagement (message > 200 caractères) | +3 | +5 |
+  | Compliment / remerciement (par mot-clé) | +6 | +9 |
+  | Excuses sincères | +6 | +9 |
+  | « tu es + [adjectif positif] » | +8 (1× par message) | +12 |
+  | Insistance inappropriée à un stade bas | -6 | -6 |
+  | Insulte non dirigée | -10 | -10 |
+  | Insulte dirigée (« tu es… », « sale… ») | -16 | -16 |
 
-  Delta borné à [-20 ; +16] par tour. Les deltas négatifs ne sont jamais
-  rattrapés par le plancher +1.
+  L'appariement des mots-clés est insensible aux accents (« genial » vaut
+  « génial »). Delta borné à [delta_min ; delta_max] ([−20 ; +24] par
+  défaut — les gains cumulés sont plafonnés par tour). Les deltas négatifs
+  ne sont jamais rattrapés par le plancher.
 
 - **Scénarios** (lettres A-K par personnage) injectés côté serveur selon les
   gates de stade ; consommation détectée par similarité cosinus entre le
@@ -237,6 +241,7 @@ Téléchargez-les sur Hugging Face et placez-les aux emplacements indiqués :
 | GET/POST | `/api/sessions` | Liste / création de rencontre (auth Bearer) |
 | GET/DELETE | `/api/sessions/{id}` | Profil public / suppression |
 | GET | `/api/sessions/{id}/photos` | Album photo |
+| POST | `/api/sessions/{id}/photos/regenerer` | Régénérer une photo (même scène, nouvelle seed) |
 | WS | `/ws/{id}` | Chat : `join {token}` / `say` / `photo_request` |
 
 ## Tests

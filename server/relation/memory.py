@@ -190,7 +190,9 @@ EXTRACTION_PROMPT = (
     "durables que l'utilisateur révèle sur LUI-MÊME (prénom, goûts, travail, "
     "animaux, événements de vie, préférences).\n"
     "Réponds STRICTEMENT par un tableau JSON de chaînes courtes à la 3e "
-    "personne (ex: [\"S'appelle Marc\", \"A un chat nommé Rex\"]).\n"
+    "personne (ex: [\"S'appelle Marc\", \"A un chat nommé Rex\"]). "
+    "Chaque élément est UNE simple chaîne de caractères — JAMAIS une paire "
+    "[clé, valeur], JAMAIS un objet {…}.\n"
     "Si aucune information nouvelle n'apparaît, réponds exactement : []\n"
     "N'ajoute AUCUN autre texte, AUCUNE explication.\n\n"
     "ÉCHANGE :\n"
@@ -202,6 +204,12 @@ def parse_facts(raw: str) -> list[str]:
 
     Cherche le premier '[' et le dernier ']' puis json.loads ; tolère les
     blocs markdown ```json```. Toute erreur renvoie une liste vide.
+
+    Tolérant aux formats « presque bons » observés en pratique : certains
+    modèles répondent avec des PAIRES ([["nom du chat", "Rex"], …]) ou des
+    objets ({"nom du chat": "Rex"}) au lieu de simples chaînes — ces formes
+    sont aplaties en faits lisibles au lieu d'être rejetées silencieusement
+    (ce qui rendait l'extraction de souvenirs inopérante).
     """
     if not raw:
         return []
@@ -220,4 +228,15 @@ def parse_facts(raw: str) -> list[str]:
     for item in data:
         if isinstance(item, str) and item.strip():
             facts.append(item.strip()[:400])
+        elif isinstance(item, (list, tuple)):
+            # Paire/nappe ["clé", "valeur", …] → « clé : valeur ».
+            parts = [str(p).strip() for p in item if str(p).strip()]
+            if parts:
+                facts.append(" : ".join(parts)[:400])
+        elif isinstance(item, dict):
+            parts = [
+                f"{k} : {v}" for k, v in item.items() if str(v).strip()
+            ]
+            if parts:
+                facts.append(" ; ".join(parts)[:400])
     return facts[:8]
