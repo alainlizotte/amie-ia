@@ -232,10 +232,31 @@ Téléchargez-les sur Hugging Face et placez-les aux emplacements indiqués :
   `llm.model` (et le dossier sous `models/`) ; le strip thinking Gemma
   (`<|channel>thought…<channel|>`) est également géré.
 
+### 🧾 Licences des modèles
+
+Les modèles ne sont pas redistribués par ce dépôt : chacun les télécharge sur
+Hugging Face et est responsable de la licence qui s'y applique — détail
+complet dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+- **Qwen3.5-9B** et son fine-tune **HauhauCS Uncensored** : Apache 2.0 —
+  usage libre, y compris pour ce jeu.
+- **embeddinggemma-300M** : Gemma Terms of Use (usage commercial autorisé) ;
+  **nomic-embed-text-v1.5** : Apache 2.0.
+- ⚠️ **Qwen-Image-2.1-Turbo** : Qwen RESEARCH LICENSE AGREEMENT —
+  **recherche/évaluation uniquement**. L'utiliser pour générer des images de
+  jeu (divertissement) est hors du champ de la licence, même gratuitement et
+  même en open source. Pour un usage pleinement en règle, préférer un modèle
+  sous licence permissive (Qwen-Image 1.0, FLUX.1-schnell — Apache 2.0).
+
 ### Modèles d'images (ComfyUI)
 
 Les portraits et photos de session sont générés par ComfyUI avec
 **Qwen Image 2.1 Turbo** (`server/image/workflows/image_qwen_image_2_1_api.json`).
+
+> ⚠️ **Licence** : Qwen-Image-2.1-Turbo est sous la Qwen RESEARCH LICENSE
+> AGREEMENT (recherche/évaluation uniquement) — voir
+> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) et la section
+> « 🧾 Licences des modèles » ci-dessus.
 Les fichiers de modèles attendus côté ComfyUI sont :
 `qwen_image_2.1_turbo_int8_convrot.safetensors` (UNet),
 `qwen3vl_8b_int8_convrot.safetensors` (CLIP/encodeur texte) et
@@ -268,3 +289,12 @@ rechargé à la fin (voir `server/gpu.py`).
 ```powershell
 .venv\Scripts\python -m pytest -q
 ```
+
+## 🧾 Licence
+
+Le code de ce dépôt est distribué sous licence [MIT](LICENSE).
+
+Les modèles d'IA ne sont pas inclus : voir
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) pour leurs licences
+(Qwen3.5 : Apache 2.0 ; Qwen-Image-2.1 : licence de recherche uniquement, avec
+alternatives permissives ; [copie de la licence Qwen](QWEN_RESEARCH_LICENSE.txt)).
