@@ -30,6 +30,8 @@ llm:
   unload_after_turn: true
   unload_delay_minutes: 5  # délai d'inactivité (minutes) avant unload
                             # quand unload_after_turn: false
+  # NB : indépendamment de ce réglage, le modèle de chat est TOUJOURS déchargé
+  # avant chaque génération d'image ComfyUI puis rechargé à la fin (VRAM).
   # Bloque les messages des utilisateurs pendant que l'IA travaille
   # (réfléchit, écrit ou génère une image) — évite les tours concurrents.
   block_user_messages_during_turn: true

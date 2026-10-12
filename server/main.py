@@ -131,6 +131,12 @@ async def lifespan(app: FastAPI):
         ok = await app.state.image.dispo()
         print(f"[amie] ComfyUI {'OK' if ok else 'injoignable'} : {app.state.image.base_url}")
 
+    # Autour de chaque génération ComfyUI : le LLM est déchargé de la VRAM
+    # avant que ComfyUI ne charge ses modèles, puis rechargé une fois la
+    # génération terminée (garantit la place même quand le modèle de chat
+    # n'est pas déchargé après chaque tour).
+    _gpu.set_llm_hooks(client.unload_model, client.ensure_model_loaded)
+
     # Boucle des messages proactifs (le personnage écrit après un silence).
     proactive_task: Optional[asyncio.Task] = None
     if cfg.relation.proactive_enabled:

@@ -5,6 +5,10 @@ Soumission d'un workflow JSON
 du PNG via `GET /view`. Deux usages :
 - « portrait » : photo de référence du personnage (création de session) ;
 - « photo »    : photos supplémentaires demandées pendant la session.
+
+Les deux usages partagent le graphe de génération **Qwen Image 2.1 Turbo**
+(texte → image). Un export d'édition (image → image) est conservé dans le
+dossier `workflows/` pour un usage futur (voir `USAGE_WORKFLOWS`).
 """
 
 from __future__ import annotations
@@ -21,6 +25,21 @@ import httpx
 from .. import gpu as _gpu
 
 USAGES_VALIDES = {"portrait", "photo"}
+
+# Workflow ComfyUI utilisé pour chaque usage. Les deux usages pointent vers
+# le graphe de génération Qwen Image 2.1 Turbo (texte → image) ; il suffit de
+# changer cette table pour basculer un usage sur un autre export (ex. le
+# workflow d'édition « image_qwen_image_2_1_image_edit_api.json »).
+USAGE_WORKFLOWS: dict[str, str] = {
+    "portrait": "image_qwen_image_2_1_api.json",
+    "photo": "image_qwen_image_2_1_api.json",
+}
+
+# Classes de nœuds d'encodage texte reconnues par le patching : l'ancien
+# `CLIPTextEncode` (clé `text`) et le nouveau `TextEncodeQwenImage21` de
+# Qwen Image 2.1 (clé `prompt`).
+PROMPT_CLASSES = ("CLIPTextEncode", "TextEncodeQwenImage21")
+PROMPT_KEYS = ("text", "prompt")
 
 DEFAULT_TIMEOUT_TOTAL = 300
 POLL_INTERVAL = 3.0
@@ -49,7 +68,14 @@ class ComfyUIBackend:
 
     # ------------------------------------------------------------------ #
     def _load_workflow(self, usage: str) -> dict[str, Any]:
-        for name in (f"{usage}.json", f"{usage}.api.json"):
+        candidats: list[str] = []
+        mappe = USAGE_WORKFLOWS.get(usage)
+        if mappe:
+            candidats.append(mappe)
+        # Repli : convention historique `<usage>.json` / `<usage>.api.json`
+        # (aussi utilisée par les tests qui installent leur propre graphe).
+        candidats += [f"{usage}.json", f"{usage}.api.json"]
+        for name in candidats:
             p = os.path.join(self._workflows_dir, name)
             if os.path.isfile(p):
                 # utf-8-sig : tolère un BOM éventuel (éditeurs Windows).
@@ -57,9 +83,61 @@ class ComfyUIBackend:
                     return json.load(f)
         raise ComfyUIError(
             f"Aucun workflow ComfyUI trouvé pour l'usage '{usage}'. "
-            f"Attendu un fichier dans {self._workflows_dir}/{usage}.json "
-            f"(format API, exporté depuis ComfyUI)."
+            f"Attendu un fichier dans {self._workflows_dir}/ "
+            f"({mappe or usage + '.json'}, format API exporté depuis ComfyUI)."
         )
+
+    @staticmethod
+    def _find_prompt_node(graph: dict[str, Any], usage: str) -> Optional[str]:
+        """Clé du nœud d'encodage du prompt positif (convention + heuristique)."""
+        for k in graph:
+            if k.upper().endswith("_PROMPT_NODE") and k.startswith(usage.upper()):
+                return k
+        for k in graph:
+            if k.upper().endswith("_PROMPT_NODE"):
+                return k
+        for k, v in graph.items():
+            if not isinstance(v, dict):
+                continue
+            ct = str(v.get("class_type") or "")
+            inputs = v.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            reconnu = ct in PROMPT_CLASSES or (
+                "TextEncode" in ct and "QwenImage" in ct
+            )
+            if reconnu:
+                for key in PROMPT_KEYS:
+                    if key in inputs:
+                        return k
+        return None
+
+    @staticmethod
+    def _find_seed_node(graph: dict[str, Any], usage: str) -> Optional[str]:
+        """Clé du nœud portant la seed (convention + sampler prioritaire)."""
+        for k in graph:
+            if k.upper().endswith("_SEED_NODE") and k.startswith(usage.upper()):
+                return k
+        for k in graph:
+            if k.upper().endswith("_SEED_NODE"):
+                return k
+        # Priorité au sampler (KSampler…) plutôt qu'à un nœud annexe qui
+        # exposerait aussi une clé `seed`.
+        for k, v in graph.items():
+            if not isinstance(v, dict):
+                continue
+            ct = str(v.get("class_type") or "")
+            inputs = v.get("inputs")
+            if "Sampler" in ct and isinstance(inputs, dict) and "seed" in inputs:
+                return k
+        for k, v in graph.items():
+            if (
+                isinstance(v, dict)
+                and isinstance(v.get("inputs"), dict)
+                and "seed" in v["inputs"]
+            ):
+                return k
+        return None
 
     def _patch_workflow(
         self,
@@ -69,52 +147,20 @@ class ComfyUIBackend:
         seed: Optional[int] = None,
     ) -> tuple[dict[str, Any], int]:
         """Injecte le prompt texte et une seed dans le graphe (convention
-        `<USAGE>_PROMPT_NODE` / `<USAGE>_SEED_NODE`, avec heuristiques)."""
+        `<USAGE>_PROMPT_NODE` / `<USAGE>_SEED_NODE`, avec heuristiques
+        adaptées à Qwen Image 2.1)."""
         if seed is None:
             seed = random.randint(0, 2**31 - 1)
         graph = json.loads(json.dumps(graph))  # deep copie
 
-        prompt_node_key = None
-        for k in graph:
-            if k.upper().endswith("_PROMPT_NODE") and k.startswith(usage.upper()):
-                prompt_node_key = k
-                break
-        if prompt_node_key is None:
-            for k in graph:
-                if k.upper().endswith("_PROMPT_NODE"):
-                    prompt_node_key = k
-                    break
-        if prompt_node_key is None:
-            for k, v in graph.items():
-                if (
-                    isinstance(v, dict)
-                    and v.get("class_type") == "CLIPTextEncode"
-                    and isinstance(v.get("inputs", {}).get("text"), str)
-                ):
-                    prompt_node_key = k
-                    break
+        prompt_node_key = self._find_prompt_node(graph, usage)
         if prompt_node_key is not None:
-            graph[prompt_node_key]["inputs"]["text"] = prompt_text
+            inputs = graph[prompt_node_key].setdefault("inputs", {})
+            # `text` (CLIPTextEncode) ou `prompt` (TextEncodeQwenImage21).
+            key = "text" if "text" in inputs else "prompt"
+            inputs[key] = prompt_text
 
-        seed_node_key = None
-        for k in graph:
-            if k.upper().endswith("_SEED_NODE") and k.startswith(usage.upper()):
-                seed_node_key = k
-                break
-        if seed_node_key is None:
-            for k in graph:
-                if k.upper().endswith("_SEED_NODE"):
-                    seed_node_key = k
-                    break
-        if seed_node_key is None:
-            for k, v in graph.items():
-                if (
-                    isinstance(v, dict)
-                    and isinstance(v.get("inputs"), dict)
-                    and "seed" in v["inputs"]
-                ):
-                    seed_node_key = k
-                    break
+        seed_node_key = self._find_seed_node(graph, usage)
         if seed_node_key is not None:
             graph[seed_node_key]["inputs"]["seed"] = int(seed)
 

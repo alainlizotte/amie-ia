@@ -5,7 +5,13 @@ Utilise exactement le même pipeline que le jeu :
   (même bloc `character` que celui stocké au profil d'une session) ;
 - le prompt vient de `image.helpers.portrait_prompt` (aucun LLM : le portrait
   est déterministe côté serveur) ;
-- la génération passe par ComfyUI (workflow `portrait.json`).
+- la génération passe par ComfyUI (workflow génération **Qwen Image 2.1 Turbo**,
+  voir `USAGE_WORKFLOWS` dans `server/image/comfyui.py`).
+
+VRAM : le LLM de chat (llama.cpp) partage le GPU avec ComfyUI. Il est donc
+DÉCHARGÉ avant le lot (best-effort) puis RECHARGÉ une fois le lot terminé —
+même garde-fou que le serveur (voir `server/gpu.py`). Si le LLM est
+injoignable (serveur non démarré), le script continue sans bloquer.
 
 Les PNG sont écrits dans le cache PARTAGÉ `data/preset_portraits/<id>.png`
 — précisément les fichiers que `_generate_portrait` (server/main.py) copie
@@ -18,6 +24,7 @@ la conversation et ne sont JAMAIS réutilisées d'une session à l'autre.
 
 Usage :
     python scripts/generer_portraits_presets.py [--preset <id>] [--force]
+    python scripts/generer_portraits_presets.py --force --llm-base-url http://127.0.0.1:8082/v1
 
 Le script saute les portraits déjà présents (reprise sûre), génère un
 portrait même seul (`--preset`), et peut régénérer bêtement le cache
@@ -26,8 +33,9 @@ portrait même seul (`--preset`), et peut régénérer bêtement le cache
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
+import dataclasses
 import os
 import re
 import sys
@@ -47,9 +55,28 @@ except (AttributeError, ValueError):
 from server.config import get_config  # noqa: E402
 from server.image.comfyui import ComfyUIBackend, ComfyUIError  # noqa: E402
 from server.image import helpers as img_helpers  # noqa: E402
+from server.llm.client import LLMClient  # noqa: E402
 from server.relation import presets as P  # noqa: E402
 
 _CACHE_DIRNAME = "preset_portraits"
+
+
+def _ouvrir_llm(cfg, override: str | None) -> LLMClient | None:
+    """Client LLM pour (dé)charger la VRAM autour du lot (best-effort).
+
+    L'URL vient de `--llm-base-url`, sinon `AMIE_LLM_BASE_URL`, sinon la config
+    (qui pointe souvent vers un nom de service Docker — injoignable depuis
+    l'hôte, auquel cas le (dé)chargement échoue silencieusement).
+    """
+    url = (override or os.environ.get("AMIE_LLM_BASE_URL") or cfg.llm.base_url or "").strip()
+    if not url:
+        return None
+    try:
+        llm_cfg = dataclasses.replace(cfg.llm, base_url=url)
+    except (TypeError, ValueError):  # config non-dataclass : on tente tel quel
+        llm_cfg = cfg.llm
+    print(f"LLM (chat) : {llm_cfg.base_url}")
+    return LLMClient(llm_cfg)
 
 
 def _cache_path(data_dir: Path, preset_id: str) -> Path | None:
@@ -123,6 +150,16 @@ async def _main(args: argparse.Namespace) -> int:
         await backend.aclose()
         return 1
 
+    # VRAM partagée : le LLM de chat doit être hors de la VRAM pendant que
+    # ComfyUI charge ses modèles. On le décharge une fois pour tout le lot,
+    # puis on le recharge à la fin (best-effort : ne bloque jamais le lot).
+    llm = _ouvrir_llm(cfg, args.llm_base_url)
+    if llm is not None:
+        if await llm.unload_model():
+            print("  → LLM (chat) déchargé de la VRAM pour toute la génération.")
+        else:
+            print("  → LLM (chat) injoignable ou déjà déchargé (on continue).")
+
     nb_total = len(presets)
     nb_gen = 0
     nb_skip = 0
@@ -152,6 +189,12 @@ async def _main(args: argparse.Namespace) -> int:
             nb_gen += 1
             print(f"    ** OK : {cache.name} ({cache.stat().st_size // 1024} Ko)")
     finally:
+        if llm is not None:
+            if await llm.ensure_model_loaded():
+                print("LLM (chat) rechargé après génération.")
+            else:
+                print("LLM (chat) non rechargé (best-effort).")
+            await llm.aclose()
         await backend.aclose()
 
     print()
@@ -172,6 +215,9 @@ def main() -> int:
     parser.add_argument("--preset", help="id d'un personnage seul (ex: maya_lin)")
     parser.add_argument("--force", action="store_true",
                         help="régénère même si le cache existe déjà")
+    parser.add_argument("--llm-base-url", default=None,
+                        help="URL du serveur LLM (défaut : AMIE_LLM_BASE_URL "
+                             "puis config ; ex. http://127.0.0.1:8082/v1 depuis l'hôte)")
     args = parser.parse_args()
     return asyncio.run(_main(args))
 

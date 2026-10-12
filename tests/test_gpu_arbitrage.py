@@ -19,6 +19,8 @@ def _etat_frais():
     gpu._turns = 0
     gpu._jobs = 0
     gpu._tour_tasks = set()
+    gpu._llm_unload = None
+    gpu._llm_load = None
     yield
 
 
@@ -83,3 +85,63 @@ async def test_garde_fous_temporels():
     assert gpu._jobs == 1
     await gpu.comfy_end()
     await gpu.turn_end()
+
+
+@pytest.mark.asyncio
+async def test_llm_decharge_avant_et_recharge_apres_generation():
+    appels: list[str] = []
+
+    async def unload():
+        appels.append("unload")
+
+    async def load():
+        appels.append("load")
+
+    gpu.set_llm_hooks(unload, load)
+    await gpu.comfy_begin()
+    assert appels == ["unload"]        # déchargé AVANT de générer
+    await gpu.comfy_end()
+    assert appels == ["unload", "load"]  # rechargé APRÈS
+
+
+@pytest.mark.asyncio
+async def test_hooks_une_seule_fois_par_salve_imbriquee():
+    appels: list[str] = []
+
+    async def unload():
+        appels.append("unload")
+
+    async def load():
+        appels.append("load")
+
+    gpu.set_llm_hooks(unload, load)
+    await gpu.comfy_begin()
+    await gpu.comfy_begin()
+    assert appels == ["unload"]           # un seul déchargement
+    await gpu.comfy_end()
+    assert appels == ["unload"]           # pas de rechargement au milieu
+    await gpu.comfy_end()
+    assert appels == ["unload", "load"]   # rechargement au dernier job
+
+
+@pytest.mark.asyncio
+async def test_hook_erreur_ignoree():
+    async def unload():
+        raise RuntimeError("boom")
+
+    async def load():
+        return True
+
+    gpu.set_llm_hooks(unload, load)
+    await gpu.comfy_begin()   # ne doit pas lever
+    await gpu.comfy_end()
+    assert gpu._jobs == 0
+
+
+@pytest.mark.asyncio
+async def test_sans_hooks_ne_plante_pas():
+    # Aucun hook branché (ex. backend Ollama, ou tests) : no-op.
+    await gpu.comfy_begin()
+    await gpu.comfy_end()
+    assert gpu._jobs == 0
+

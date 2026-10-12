@@ -40,7 +40,7 @@
   },
   "459:451": {
     "inputs": {
-      "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+      "unet_name": "qwen_image_2.1_turbo_int8_convrot.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -50,7 +50,7 @@
   },
   "459:452": {
     "inputs": {
-      "prompt": "prompt\n\n",
+      "prompt": "Image prompt.\n\n\n\n",
       "negative_prompt": "",
       "resolution": 1024,
       "clip": [
@@ -60,7 +60,7 @@
     },
     "class_type": "TextEncodeQwenImage21",
     "_meta": {
-      "title": "Text Encode Qwen Image 2.1"
+      "title": "Encodage de texte Qwen Image 2.1"
     }
   },
   "459:453": {
@@ -119,13 +119,13 @@
   "459:458": {
     "inputs": {
       "seed": 593103825222987,
-      "steps": 25,
+      "steps": 8,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
-        "459:473",
+        "459:451",
         0
       ],
       "positive": [
@@ -144,25 +144,6 @@
     "class_type": "KSampler",
     "_meta": {
       "title": "KSampler"
-    }
-  },
-  "459:473": {
-    "inputs": {
-      "lora_name": "Unchained-XXX.safetensors",
-      "strength_model": 1,
-      "strength_clip": 1,
-      "model": [
-        "459:451",
-        0
-      ],
-      "clip": [
-        "459:453",
-        0
-      ]
-    },
-    "class_type": "LoraLoader",
-    "_meta": {
-      "title": "Charger LoRA"
     }
   }
 }

@@ -16,8 +16,8 @@ l'écran (travail, amis, loisirs). Il agit comme une vraie personne et se
 tient à son rôle défini — jamais un assistant.
 
 Le tout tourne **en local sur votre machine** (aucune donnée envoyée sur
-Internet) : chat sous llama.cpp (Qwen 3.5), images sous ComfyUI, mémoire
-vectorielle sous un serveur d'embeddings.
+Internet) : chat sous llama.cpp (Qwen 3.5), images sous ComfyUI
+(**Qwen Image 2.1 Turbo**), mémoire vectorielle sous un serveur d'embeddings.
 
 ---
 
@@ -150,7 +150,11 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   lui-même une photo (probabilité par tour, plus élevée avec un message
   spontané) — même pipeline directeur photo + garde-fous de tenue.
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif
-  (immédiat ou après un délai configurable), libérant la place pour ComfyUI.
+  (immédiat ou après un délai configurable), et **systématiquement déchargé
+  avant chaque génération d'image puis rechargé une fois la génération
+  terminée** — ComfyUI (Qwen Image 2.1 Turbo) dispose ainsi toujours de la
+  place nécessaire, même lorsque le modèle de chat reste chargé entre les
+  tours.
 - **18+** : mention affichée sur l'écran de connexion + case de déclaration
   de majorité obligatoire.
 
@@ -227,6 +231,19 @@ Téléchargez-les sur Hugging Face et placez-les aux emplacements indiqués :
 - **Autres modèles** : Gemma 4, Mistral, etc. restent utilisables — changer
   `llm.model` (et le dossier sous `models/`) ; le strip thinking Gemma
   (`<|channel>thought…<channel|>`) est également géré.
+
+### Modèles d'images (ComfyUI)
+
+Les portraits et photos de session sont générés par ComfyUI avec
+**Qwen Image 2.1 Turbo** (`server/image/workflows/image_qwen_image_2_1_api.json`).
+Les fichiers de modèles attendus côté ComfyUI sont :
+`qwen_image_2.1_turbo_int8_convrot.safetensors` (UNet),
+`qwen3vl_8b_int8_convrot.safetensors` (CLIP/encodeur texte) et
+`qwen_image_2.1_vae_bf16.safetensors` (VAE). Le workflow d'édition
+(`image_qwen_image_2_1_image_edit_api.json`, image → image) est conservé pour
+un usage futur — voir `USAGE_WORKFLOWS` dans `server/image/comfyui.py`.
+Avant chaque génération, le modèle de chat est déchargé de la VRAM puis
+rechargé à la fin (voir `server/gpu.py`).
 
 ## API
 
