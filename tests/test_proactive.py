@@ -1,6 +1,7 @@
-# Tests des messages proactifs (silence 24 h → 1 message/jour, -15 pts si
-# sans réponse avant le suivant, badge remis à zéro dès que l'utilisateur
-# répond).
+# Tests des messages proactifs (silence 24 h → message spontané, relances
+# espacées de façon croissante puis plafonnées, -15 pts si sans réponse avant
+# la suivante, adieu de clôture au bascule au stade rejet ou au plafond
+# d'abandon, badge remis à zéro dès que l'utilisateur répond).
 
 import asyncio
 import sys
@@ -138,9 +139,14 @@ async def test_penalite_15_sans_reponse(client, monkeypatch):
     monkeypatch.setattr(app.state.client, "chat", _FakeChat(raise_exc=RuntimeError("x")))
     monkeypatch.setattr(app.state.client, "unload_model", _noop_unload)
 
-    # 1er message non répondu il y a 25 h ; silence total de 49 h.
+    # 1er message non répondu il y a 25 h ; silence total de 49 h. Score
+    # assez haut pour que la pénalité NE bascule PAS au stade rejet
+    # (sinon ce serait l'adieu de clôture, voir
+    # test_bascule_rejet_adieu_froid_unique).
     _set_profile(
         sid,
+        relationship_score=300,
+        relationship_stage="reserve",
         last_interaction=(datetime.utcnow() - timedelta(hours=49)).isoformat(),
         last_proactive_at=(datetime.utcnow() - timedelta(hours=25)).isoformat(),
         unanswered_messages=1,
@@ -149,7 +155,8 @@ async def test_penalite_15_sans_reponse(client, monkeypatch):
 
     profile = _get_profile(sid)
     assert profile["unanswered_messages"] == 2
-    assert profile["relationship_score"] == 100 - 15  # -15 points
+    assert profile["relationship_score"] == 300 - 15  # -15 points
+    assert not profile["proactive_closed"]
 
 
 @pytest.mark.asyncio
@@ -394,7 +401,9 @@ async def test_contexte_termine_par_cadrage(client, monkeypatch):
     # Le tour final est le cadrage — pas la vieille question, pas un assistant.
     assert msgs[-1].role == "user"
     assert "message spontané" in msgs[-1].content
-    assert "heures ont passé" in msgs[-1].content
+    # Anti-hallucination : le cadrage martèle que l'utilisateur n'a RIEN écrit.
+    assert "n'a PAS écrit" in msgs[-1].content
+    assert "reste silencieux" in msgs[-1].content
     assert msgs[-1].content != "Des nouvelles rencontres"
     # Génération bornée mais suffisante pour le raisonnement du modèle
     # (séparé du contenu visible) + le texto lui-même.
@@ -582,3 +591,261 @@ async def test_append_refuse_doublon_assistant(client):
     contenu = [m.content for m in ChatHistory(sid).history]
     assert contenu.count("Coucou, ça va ?") == 1
     assert "Vraiment autre chose" in contenu
+
+
+# ---- Gradation réaliste (correctifs session 96598d90d4) ------------------- #
+#  Espacement croissant, plafond d'abandon, adieu de clôture (stade rejet
+#  ou plafond), contrôle des durées inventées et des retours hallucinés.
+
+
+def test_proactive_due_plafond_et_cloture():
+    """Plafond d'abandon + drapeau de clôture : plus jamais de relance."""
+    from server.config import RelationConfig
+
+    rcfg = RelationConfig()
+    base = {
+        "relationship_stage": "neutre",
+        "last_interaction": (
+            datetime.utcnow() - timedelta(hours=25)
+        ).isoformat(),
+    }
+    # Plafond atteint (6 messages sans réponse) → plus rien.
+    plafond = dict(
+        base,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=100)).isoformat(),
+        unanswered_messages=rcfg.max_proactive_unanswered,
+    )
+    assert _proactive_due(plafond, rcfg) == (False, False)
+    # Période close (adieu envoyé) → plus rien, même avec peu de relances.
+    clos = dict(
+        base,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=100)).isoformat(),
+        unanswered_messages=2,
+        proactive_closed=True,
+    )
+    assert _proactive_due(clos, rcfg) == (False, False)
+
+
+def test_proactive_due_espacement_croissant():
+    """Chaque relance ignorée attend plus longtemps (24 h × unanswered)."""
+    from server.config import RelationConfig
+
+    rcfg = RelationConfig()
+    base = {
+        "relationship_stage": "neutre",
+        "last_interaction": (
+            datetime.utcnow() - timedelta(hours=120)
+        ).isoformat(),
+        "unanswered_messages": 2,
+    }
+    # 2 relances ignorées → intervalle 48 h : 25 h après le dernier
+    # message, c'est encore trop tôt.
+    totot = dict(
+        base,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=25)).isoformat(),
+    )
+    assert _proactive_due(totot, rcfg) == (False, False)
+    # 48 h écoulées → dû, avec pénalité.
+    ok = dict(
+        base,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=49)).isoformat(),
+    )
+    assert _proactive_due(ok, rcfg) == (True, True)
+
+
+@pytest.mark.asyncio
+async def test_plafond_declenche_adieu_puis_silence(client, monkeypatch):
+    """Au plafond de relances, le dernier message est un adieu (niveau
+    colère blessée) et la période se close : plus aucun message spontané
+    tant que l'utilisateur n'a pas répondu."""
+    from server.main import PROACTIVE_ESCALATION
+
+    token = _inscription(client, "plafond1")["token"]
+    sid = client.post(
+        "/api/sessions", json={"preset_id": "clara_moreau"}, headers=_auth(token)
+    ).json()["session_id"]
+    monkeypatch.setattr(app.state.client, "chat", _FakeChat(raise_exc=RuntimeError("x")))
+    monkeypatch.setattr(app.state.client, "unload_model", _noop_unload)
+
+    rcfg = get_config().relation
+    cap = rcfg.max_proactive_unanswered
+    _set_profile(
+        sid,
+        relationship_score=800,
+        relationship_stage="proche",
+        last_interaction=(
+            datetime.utcnow() - timedelta(hours=24 * 40)
+        ).isoformat(),
+        last_proactive_at=(
+            datetime.utcnow() - timedelta(hours=24 * 20)
+        ).isoformat(),
+        unanswered_messages=cap - 1,
+    )
+    await _proactive_for_session(sid)
+
+    profile = _get_profile(sid)
+    assert profile["unanswered_messages"] == cap
+    assert profile["proactive_closed"] is True
+    hist = ChatHistory(sid).history
+    assert hist[-1].role == "assistant"
+    assert hist[-1].content in PROACTIVE_ESCALATION[-1]     # adieu, pas relance
+
+    # Le silence continue → plus JAMAIS de message spontané.
+    avant = len(ChatHistory(sid).history)
+    _set_profile(
+        sid,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=24 * 10)).isoformat(),
+    )
+    await _proactive_for_session(sid)
+    assert len(ChatHistory(sid).history) == avant
+    assert _get_profile(sid)["unanswered_messages"] == cap
+
+
+@pytest.mark.asyncio
+async def test_bascule_rejet_adieu_froid_unique(client, monkeypatch):
+    """Si la pénalité de silence fait basculer au stade rejet : un unique
+    adieu froid (PROACTIVE_CLOSURE), pas de relance comptée, puis silence
+    total."""
+    from server.main import PROACTIVE_CLOSURE
+
+    token = _inscription(client, "cloture1")["token"]
+    sid = client.post(
+        "/api/sessions", json={"preset_id": "clara_moreau"}, headers=_auth(token)
+    ).json()["session_id"]
+    monkeypatch.setattr(app.state.client, "chat", _FakeChat(raise_exc=RuntimeError("x")))
+    monkeypatch.setattr(app.state.client, "unload_model", _noop_unload)
+
+    _set_profile(
+        sid,
+        relationship_score=110,
+        relationship_stage="froid",
+        last_interaction=(datetime.utcnow() - timedelta(hours=72)).isoformat(),
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=25)).isoformat(),
+        unanswered_messages=1,
+    )
+    await _proactive_for_session(sid)
+
+    profile = _get_profile(sid)
+    assert profile["relationship_score"] == 95              # 110 - 15
+    assert profile["relationship_stage"] == "rejet"
+    assert profile["proactive_closed"] is True
+    assert profile["unanswered_messages"] == 1              # adieu ≠ relance
+    hist = ChatHistory(sid).history
+    assert hist[-1].role == "assistant"
+    assert hist[-1].content in PROACTIVE_CLOSURE
+
+    # Ensuite : plus rien, même longtemps après.
+    avant = len(hist)
+    _set_profile(
+        sid,
+        last_proactive_at=(datetime.utcnow() - timedelta(hours=48)).isoformat(),
+    )
+    await _proactive_for_session(sid)
+    assert len(ChatHistory(sid).history) == avant
+
+
+def test_duree_coherente():
+    """Les durées de silence inventées par le LLM sont détectées
+    (bug réel : « trois jours » pour un silence de huit, puis encore
+    « trois jours » après une semaine)."""
+    from server.main import _duree_coherente
+
+    heures = 8 * 24 + 2                          # ~8 jours de silence réel
+    # Cohérent : exact, ±1 jour, ou en semaines proches.
+    assert _duree_coherente("Ça fait huit jours que tu ne réponds pas.", heures)
+    assert _duree_coherente("près de 8 jours…", heures)
+    assert _duree_coherente("plus d'une semaine sans rien", heures)
+    # Incohérent (les cas observés en production).
+    assert not _duree_coherente("Cela fait environ trois jours…", heures)
+    assert not _duree_coherente("2 semaines déjà !", heures)
+    assert not _duree_coherente("un mois de silence !", heures)
+    # Sans durée mentionnée → légitime.
+    assert _duree_coherente("Tu es en vie, n'est-ce pas ?", heures)
+
+
+def test_affirme_retour_utilisateur():
+    """Les hallucinations de retour (textos réels de la session
+    96598d90d4) sont détectées ; une relance normale passe."""
+    from server.main import _affirme_retour_utilisateur
+
+    assert _affirme_retour_utilisateur(
+        "Tant mieux si tu as trouvé le courage de briser ce silence "
+        "époustouflant !"
+    )
+    assert _affirme_retour_utilisateur(
+        "tu décides soudainement de briser le silence comme si rien "
+        "n'était arrivé !"
+    )
+    assert _affirme_retour_utilisateur("Merci d'avoir répondu enfin !")
+    assert _affirme_retour_utilisateur("Te voilà de retour, enfin !")
+    # Relances légitimes (aucun retour prêté à l'utilisateur).
+    assert not _affirme_retour_utilisateur(
+        "Ça fait huit jours que tu ne réponds pas… tu vas bien ?"
+    )
+    assert not _affirme_retour_utilisateur("Allo ? Tu es là ?")
+
+
+@pytest.mark.asyncio
+async def test_duree_inventee_rejette_brouillon(client, monkeypatch):
+    """Le LLM invente « trois jours » pour un silence de huit → brouillon
+    rejeté, 2e essai avec la durée exacte, message correct envoyé."""
+    token = _inscription(client, "duree1")["token"]
+    sid = client.post(
+        "/api/sessions", json={"preset_id": "clara_moreau"}, headers=_auth(token)
+    ).json()["session_id"]
+
+    hist = ChatHistory(sid)
+    hist.append("user", "Salut !")
+    hist.append("assistant", "Coucou ! Comment ça va ?")
+
+    fake = _SeqChat([
+        "Cela fait trois jours que je n'ai plus de nouvelles…",
+        "Huit jours sans un mot… j'espère que tout va bien de ton côté.",
+    ])
+    monkeypatch.setattr(app.state.client, "chat", fake)
+    monkeypatch.setattr(app.state.client, "unload_model", _noop_unload)
+
+    _set_profile(sid, last_interaction=(
+        datetime.utcnow() - timedelta(hours=8 * 24 + 2)
+    ).isoformat())
+    await _proactive_for_session(sid)
+
+    assert fake.calls == 2   # le brouillon infidèle a bien été rejeté
+    hist2 = ChatHistory(sid).history
+    assert hist2[-1].content == (
+        "Huit jours sans un mot… j'espère que tout va bien de ton côté."
+    )
+    assert _get_profile(sid)["unanswered_messages"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reponse_leve_la_cloture(client, monkeypatch):
+    """Après un adieu de clôture, la réponse de l'utilisateur rouvre le
+    cycle : badge à zéro, clôture levée — une nouvelle période de silence
+    pourra relancer des messages spontanés."""
+    token = _inscription(client, "cloture2")["token"]
+    sid = client.post(
+        "/api/sessions", json={"preset_id": "clara_moreau"}, headers=_auth(token)
+    ).json()["session_id"]
+    monkeypatch.setattr(app.state.client, "chat", _FakeChat(raise_exc=RuntimeError("x")))
+    monkeypatch.setattr(app.state.client, "unload_model", _noop_unload)
+
+    _set_profile(
+        sid,
+        proactive_closed=True,
+        unanswered_messages=2,
+        last_interaction=(datetime.utcnow() - timedelta(hours=72)).isoformat(),
+    )
+
+    with client.websocket_connect(f"/ws/{sid}") as ws:
+        ws.send_json({"type": "join", "token": token})
+        ws.receive_json()  # joined
+        ws.send_json({"type": "say", "text": "désolé pour ce long silence !"})
+        for _ in range(30):
+            m = ws.receive_json()
+            if m["type"] == "dm":
+                break
+
+    profile = _get_profile(sid)
+    assert profile["unanswered_messages"] == 0
+    assert profile["proactive_closed"] is False

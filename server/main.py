@@ -1160,7 +1160,11 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
 #  Gradation émotionnelle : plus les messages restent sans réponse, plus le
 #  ton monte — ennui léger → inquiétude → tristesse → frustration → colère
 #  blessée. Chaque message spontané exprime le manque de réponse, jamais une
-#  simple relance répétée.
+#  simple relance répétée. La gradation est IMPOSÉE par le serveur
+#  (GRADATION_PROACTIVE + contrôle déterministe) : elle ne peut ni régresser
+#  ni boucler, et la période se TERMINE — espacement croissant, plafond
+#  d'abandon (PROACTIVE_CLOSURE / proactive_closed), adieu au bascule au
+#  stade rejet.
 # --------------------------------------------------------------------------- #
 PROACTIVE_FALLBACKS: dict[str, list[str]] = {
     "froid": [
@@ -1283,6 +1287,51 @@ PROACTIVE_ESCALATION: list[list[str]] = [
     ],
 ]
 
+# Gradation émotionnelle des relances — MIROIR de PROACTIVE_ESCALATION,
+# utilisée pour imposer le niveau au LLM (server-side, non négociable).
+# L'index = niveau (0-4) ; `unanswered` messages ignorés → niveau
+# min(unanswered, 5) - 1. Le dernier niveau est un adieu : c'est lui qui
+# clôt la période quand le plafond d'abandon est atteint.
+GRADATION_PROACTIVE: list[str] = [
+    (
+        "étonnement et ennui léger — demande un signe de vie de façon "
+        "légère et naturelle"
+    ),
+    (
+        "inquiétude sincère — tu t'inquiètes pour la personne, tu veux "
+        "savoir si tout va bien"
+    ),
+    (
+        "tristesse et sentiment d'être délaissé(e) — exprime le manque "
+        "ressenti, la peine"
+    ),
+    (
+        "frustration visible — tu trouves ça irrespectueux d'être "
+        "ignoré(e) sans raison"
+    ),
+    (
+        "colère blessée et distance — ton dernier message : tu tournes "
+        "la page et tu cesses d'écrire"
+    ),
+]
+
+# Adieu de clôture — beat final DÉTERMINISTE envoyé une seule fois quand
+# le silence fait basculer la relation au stade « rejet » (pénalités de
+# relance) : froid, blessé, sans réengagement, cohérent avec les refus
+# courts du stade (REFUS_REJET). Après lui : silence total.
+PROACTIVE_CLOSURE: list[str] = [
+    "C'est terminé. J'ai attendu assez longtemps.",
+    "J'ai fermé ce chapitre. Ne t'excuse pas, c'est trop tard.",
+    "Je ne t'écrirai plus. Prends soin de toi quand même.",
+    "Silence reçu. Considère que c'est fini entre nous.",
+    "J'ai tourné la page. Bonne continuation.",
+    "Tu m'as perdu(e). Adieu.",
+    "Assez attendu. Je passe à autre chose, définitivement.",
+    "Le silence a eu le dernier mot. C'est fini.",
+    "Je retire le temps que je t'ai donné. Ne me recontacte pas.",
+    "Trop tard. Ma décision est prise : c'est fini.",
+]
+
 
 def _last_user_activity(profile: dict[str, Any]) -> tuple[Optional[datetime], datetime]:
     """(référence d'activité de l'utilisateur, now cohérent).
@@ -1308,24 +1357,42 @@ def _last_user_activity(profile: dict[str, Any]) -> tuple[Optional[datetime], da
 def _proactive_due(
     profile: dict[str, Any], rcfg,
 ) -> tuple[bool, bool]:
-    """(envoyer un message maintenant ?, pénalité de silence ?)."""
+    """(envoyer un message maintenant ?, pénalité de silence ?).
+
+    Trois garde-fous réalistes :
+    - période close (plafond d'abandon atteint ou bascule au rejet) → plus
+      aucun message spontané tant que l'utilisateur n'a pas répondu ;
+    - espacement CROISSANT : chaque relance sans réponse attend plus
+      longtemps (24 h, puis ×2, ×3…) — une personne réelle espace ses
+      relances au lieu de marteler un texto par jour ;
+    - plafond `max_proactive_unanswered` messages sans réponse.
+    """
     if profile.get("relationship_stage") == "rejet":
+        return False, False
+    if profile.get("proactive_closed"):
         return False, False
     ref, now = _last_user_activity(profile)
     if ref is None:
         return False, False
     if (now - ref) < timedelta(hours=rcfg.proactive_after_hours):
         return False, False
-    # Au plus un message spontané par intervalle (1/jour par défaut).
+    unanswered = int(profile.get("unanswered_messages", 0) or 0)
+    # Au plus un message spontané par intervalle — intervalle qui croît
+    # avec le nombre de relances déjà ignorées.
     last_pro = profile.get("last_proactive_at")
     if last_pro:
         try:
             last_pro_dt = datetime.fromisoformat(str(last_pro))
-            if (now - last_pro_dt) < timedelta(hours=rcfg.proactive_interval_hours):
+            interval = timedelta(
+                hours=rcfg.proactive_interval_hours * max(1, unanswered)
+            )
+            if (now - last_pro_dt) < interval:
                 return False, False
         except (ValueError, TypeError):
             pass
-    unanswered = int(profile.get("unanswered_messages", 0) or 0)
+    # Plafond d'abandon : au-delà, le personnage cesse d'écrire.
+    if unanswered >= rcfg.max_proactive_unanswered:
+        return False, False
     return True, unanswered >= 1
 
 
@@ -1459,6 +1526,83 @@ def _too_similar(a: str, b: str, ratio_min: float = 0.45,
         if match.size >= bloc_min:
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+#  Validation déterministe des brouillons proactifs (session 96598d90d4) :
+#  le LLM inventait des durées de silence incohérentes (« trois jours »
+#  puis « trois jours » après une semaine) et prérait un retour à
+#  l'utilisateur resté silencieux (« tu brises le silence… »). Ces
+#  brouillons sont REFUSÉS (2e essai, puis repli déterministe).
+# --------------------------------------------------------------------------- #
+_MOTS_NOMBRE: dict[str, int] = {
+    "zero": 0, "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4,
+    "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10,
+    "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15,
+    "seize": 16, "vingt": 20, "trente": 30,
+}
+
+# Durées à l'échelle du jour uniquement (« trois jours », « 2 semaines »,
+# « un mois »). Les « heures » sont ignorées : trop de faux positifs
+# (« j'ai nagé 2 heures ») pour une durée de silence toujours ≥ 24 h.
+_RE_DUREE_JOURS = re.compile(
+    r"\b(\d+|z[ée]ro|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|"
+    r"onze|douze|treize|quatorze|quinze|seize|vingt|trente)\s+"
+    r"(jours?|journees?|semaines?|mois)\b",
+    re.IGNORECASE,
+)
+
+# Phrases qui prêtent un retour/une réponse à l'utilisateur silencieux.
+_RES_RETOUR_HALLUCINE = [
+    # « tu as brisé le silence », « tu décides soudainement de briser… »
+    re.compile(r"\btu\b[^.!?]{0,60}?\b(bris|cass|romp)\w*"),
+    re.compile(r"\b(bris|cass|romp)\w*\s+(le|ce|ton)\s+s[il]+ence\b"),
+    re.compile(r"\btu\s+(viens de|finis par|decides?|as decide)"),
+    re.compile(r"\b(tu as|t'as|tu viens de)\s+"
+               r"(repond|ecrit|ecrir|revenu|revenir|reapparu|donne)"),
+    re.compile(r"\b(tu es|t'es|te voila|te revoila)\s+(de retour|revenue|revenu)"),
+    re.compile(r"\bmerci\s+(d'avoir|pour avoir|de m'avoir)"),
+    re.compile(r"\btant mieux si tu as\b"),
+]
+
+
+def _duree_coherente(texte: str, heures: int) -> bool:
+    """Vrai si les durées citées collent au silence réel (tolérance ±1 j).
+
+    La durée exacte est injectée dans la consigne ; ce contrôle rattrape
+    les modèles qui « recalculent » quand même (« trois jours » pour un
+    silence de huit). Un brouillon incohérent est rejeté → 2e essai puis
+    repli déterministe.
+    """
+    if not texte:
+        return True
+    jours_reels = heures / 24.0
+    for m in _RE_DUREE_JOURS.finditer(_sans_accents(texte)):
+        brut, unite = m.group(1).lower(), m.group(2).lower()
+        n = int(brut) if brut.isdigit() else _MOTS_NOMBRE.get(brut, -1)
+        if n < 0:
+            continue
+        if unite.startswith("semain"):
+            if abs(n * 7 - jours_reels) > 3:
+                return False
+        elif unite.startswith("mois"):
+            if abs(n * 30 - jours_reels) > 7:
+                return False
+        else:                                # jours / journées
+            if abs(n - jours_reels) > 1:
+                return False
+    return True
+
+
+def _affirme_retour_utilisateur(texte: str) -> bool:
+    """Vrai si le texto prête un message/retour à l'utilisateur silencieux.
+
+    Mode de défaillance observé : le tour de cadrage (rôle « user ») était
+    lu comme une parole de l'utilisateur → « tant mieux si tu as brisé ce
+    silence ». De telles phrases invalident le brouillon.
+    """
+    t = _sans_accents(texte or "").lower().replace("\u2019", "'")
+    return any(pat.search(t) for pat in _RES_RETOUR_HALLUCINE)
 
 
 def _truncate_texto(text: str, limite: int = 600) -> str:
@@ -1640,7 +1784,7 @@ def _clean_proactive_text(text: str, *avoid: str) -> str:
 
 async def _generate_proactive_message(
     llm: LLMClient, profile: dict[str, Any], sid: str,
-    ref: datetime, now: datetime,
+    ref: datetime, now: datetime, final: bool = False,
 ) -> str:
     """Message spontané via le LLM (incarnation pure, aucun outil).
 
@@ -1652,12 +1796,26 @@ async def _generate_proactive_message(
     3. le modèle rehash le dernier message           → détection de
        en le paraphrasant                              similarité + 2e essai ;
     4. fuite d'analyse (« **Analyse… »,              → préfixes méta +
-       « [Current State: …] »)                         coupe de bloc.
+       « [Current State: …] »)                         coupe de bloc ;
+    5. durée du silence inventée                     → durée exacte imposée
+       (« trois jours » à 8 jours)                     + contrôle déterministe ;
+    6. le modèle prête un retour à                   → interdiction explicite
+       l'utilisateur silencieux                        + contrôle déterministe.
+
+    Le niveau de gradation émotionnelle est CHOISI par le serveur
+    (GRADATION_PROACTIVE) et les 4 derniers textos du silence courant sont
+    fournis au modèle : la montée ne peut plus régresser (ton léger après
+    un message de colère, observé en session 96598d90d4).
 
     Si rien d'utile n'est produit, renvoie "" — l'appelant bascule sur le
     repli déterministe (_fallback_proactive).
     """
     hours = max(1, int((now - ref).total_seconds() // 3600))
+    jours_silence = hours // 24
+    if jours_silence >= 1:
+        duree = f"{jours_silence} jour{'s' if jours_silence > 1 else ''}"
+    else:
+        duree = f"{hours} heure{'s' if hours > 1 else ''}"
     unanswered = int(profile.get("unanswered_messages", 0) or 0)
     name = profile.get("character", {}).get("name", "")
     stage = profile.get("relationship_stage", "froid")
@@ -1673,7 +1831,8 @@ async def _generate_proactive_message(
 
     directive = (
         f"[MESSAGE SPONTANÉ — Tu écris la première, {name}. L'utilisateur "
-        f"ne s'est pas manifesté depuis environ {hours} h. "
+        f"ne s'est pas manifesté depuis {duree} — chiffre certain, ne le "
+        f"recalcule pas. "
         f"Stade de la relation : {stage}. "
         "Écris UN seul message de type texto (1 à 3 phrases courtes), "
         "fidèle à ta personnalité et au stade actuel. "
@@ -1682,40 +1841,65 @@ async def _generate_proactive_message(
         "sans liste : un texto brut, rien d'autre.\n"
     )
     if unanswered > 0:
-        gradation = [
-            (
-                "étonnement et ennui léger — demande un signe de vie "
-                "de façon légère et naturelle"
-            ),
-            (
-                "inquiétude sincère — tu t'inquiètes pour la personne, "
-                "tu veux savoir si tout va bien"
-            ),
-            (
-                "tristesse et sentiment d'être délaissé(e) — exprime "
-                "le manque ressenti, la peine"
-            ),
-            (
-                "frustration visible — tu trouves ça irrespectueux "
-                "d'être ignoré(e) sans raison"
-            ),
-            (
-                "colère blessée et distance — tu penses sérieusement "
-                "à arrêter d'écrire"
-            ),
-        ]
-        etat = gradation[min(unanswered, len(gradation)) - 1]
+        # Gradation DÉTERMINISTE : le niveau est imposé par le serveur et
+        # ne peut plus redescendre (ton léger après un message de colère,
+        # observé en production).
+        niveau = min(unanswered, len(GRADATION_PROACTIVE)) - 1
+        if final:
+            niveau = len(GRADATION_PROACTIVE) - 1
+        etat = GRADATION_PROACTIVE[niveau]
+
+        # Mémoire de ton : les derniers textos proactifs du silence
+        # courant, étiquetés par niveau (du plus récent au plus ancien).
+        recents: list[str] = []
+        for m in reversed(hist_full):
+            if m.role == "user":
+                break
+            if m.role == "assistant" and m.content.strip():
+                recents.append(m.content)
+            if len(recents) >= 4:
+                break
+        memoire = " ".join(
+            f"[niveau {max(0, niveau - 1 - i) + 1}/5] « {t[:220]} »"
+            for i, t in enumerate(recents)
+        )
+
         directive += (
             f"IMPORTANT : c'est ton message numéro {unanswered + 1} "
             f"consécutif resté SANS RÉPONSE. "
-            f"Ton état émotionnel actuel : {etat}. "
-            "Le message doit porter SUR ce silence (le manque de réponse), "
+            f"Silence réel : {duree}. "
+            f"Niveau émotionnel IMPOSÉ : {niveau + 1}/5 — {etat}. "
+            "Ce niveau est fixé côté serveur : ne redescends JAMAIS à un "
+            "niveau plus léger (pas de ton gai, taquin ou enthousiaste si "
+            "le niveau est tristesse, frustration ou colère) et ne monte "
+            "pas au-delà. "
+        )
+        if final:
+            directive += (
+                "C'est ton DERNIER message : après lui tu cesses "
+                "définitivement d'écrire. Tourne la page avec dignité — "
+                "sans menace, sans vulgarité, sans ultimatum farfelu — en "
+                "restant fidèle à ta personnalité. "
+            )
+        if memoire:
+            directive += (
+                "Pour mémoire, tes derniers messages durant ce silence, du "
+                f"plus récent au plus ancien : {memoire}. Ne reprends "
+                "AUCUNE de leurs tournures et ne redescends pas sous le "
+                "niveau actuel. "
+            )
+        directive += (
+            "Le message doit porter SUR ce silence (l'absence de réponse), "
             "avec cette émotion. Reste fidèle à ta personnalité et à ta "
             "façon de parler, mais fais vraiment sentir cette gradation. "
             "Varie toujours ton expression : ne reprends JAMAIS une phrase "
             "ou un tour déjà utilisé dans un de tes précédents messages "
             "sur ce même silence — change d'angle, de formule, de ton à "
             "chaque fois. "
+            "N'écris JAMAIS que l'utilisateur a répondu, écrit, revenu ou "
+            "brisé le silence : il n'a RIEN envoyé, il reste silencieux. "
+            "Si tu mentions la durée du silence, écris EXACTEMENT "
+            f"« {duree} » — jamais un autre nombre de jours. "
         )
     if last_assistant:
         directive += (
@@ -1740,23 +1924,29 @@ async def _generate_proactive_message(
     # Contexte : derniers échanges, PUIS un tour « user » de cadrage qui
     # fait de l'écriture spontanée la consigne courante. Sans lui, le
     # modèle répond à la vieille question de l'utilisateur restée en fin
-    # d'historique (cas observé en production).
+    # d'historique (cas observé en production). Le cadrage martèle aussi
+    # que l'utilisateur n'a RIEN écrit : sinon le modèle lui prête un
+    # retour imaginaire (« tant mieux si tu as brisé le silence »).
     hist = [m for m in hist_full if m.role in ("user", "assistant")][-8:]
     cadrage = (
-        f"(Environ {hours} heures ont passé sans nouvelle de l'utilisateur. "
-        f"{name} ouvre la conversation et lui écrit un message spontané — "
-        "pas une réponse aux anciens messages.)"
+        f"(Rappel : l'utilisateur n'a PAS écrit depuis {duree} — il n'a "
+        "envoyé AUCUN message, il ne revient pas, il ne répond pas. "
+        f"C'est {name} seule qui prend l'initiative d'écrire un message "
+        "spontané, pas une réponse aux anciens messages. Ne lui prête "
+        "jamais un mot ni une réaction : il reste silencieux.)"
     )
 
     text = ""
+    motifs: list[str] = []
     for essai in range(2):
         consigne = cadrage
         if essai > 0:
+            raisons = " ; ".join(motifs) or "message trop proche du précédent"
             consigne += (
-                " ATTENTION : ton brouillon précédent reprenait ton "
-                f"dernier message (« {last_assistant[:150]} »). Écris un "
-                "message TOTALEMENT différent — un nouvel angle, une "
-                "nouvelle idée, sans réutiliser ces phrases."
+                f" ATTENTION : ton brouillon précédent a été rejeté "
+                f"({raisons}). Écris un message TOTALEMENT différent — un "
+                "nouvel angle, une nouvelle idée, sans réutiliser ces "
+                "phrases."
             )
         messages = (
             [Message(role="system", content=system_text)]
@@ -1771,21 +1961,44 @@ async def _generate_proactive_message(
             max_tokens=1024,
         )
         text = _clean_proactive_text(result.content or "", last_assistant, cadrage)
-        if text and not _too_similar(text, last_assistant):
-            return _truncate_texto(text)
+        motifs.clear()
+        if not text:
+            motifs.append("il était vide après nettoyage")
+            continue
+        if _too_similar(text, last_assistant):
+            motifs.append("il reprenait ton dernier message")
+            continue
+        if not _duree_coherente(text, hours):
+            motifs.append(
+                f"il indiquait une durée de silence inexacte — le silence "
+                f"réel est de {duree}"
+            )
+            continue
+        if _affirme_retour_utilisateur(text):
+            motifs.append(
+                "il prétendait que l'utilisateur avait répondu ou revenu — "
+                "il n'a RIEN écrit"
+            )
+            continue
+        return _truncate_texto(text)
     return ""
 
 
-def _fallback_proactive(profile: dict[str, Any], avoid: str = "") -> str:
+def _fallback_proactive(
+    profile: dict[str, Any], avoid: str = "", final: bool = False,
+) -> str:
     """Message de repli (LLM indisponible) — gradation selon le silence.
 
     Premier message : ouverture naturelle par stade. Messages suivants
     (le précédent est resté sans réponse) : étonnement → inquiétude →
-    tristesse → frustration → colère blessée. `avoid` : texte à ne pas
-    reproduire (le dernier message du personnage).
+    tristesse → frustration → colère blessée. `final` : c'est le dernier
+    message autorisé avant abandon → adieu (dernier niveau). `avoid` :
+    texte à ne pas reproduire (le dernier message du personnage).
     """
     unanswered = int(profile.get("unanswered_messages", 0) or 0)
-    if unanswered <= 0:
+    if final:
+        bank = PROACTIVE_ESCALATION[-1]
+    elif unanswered <= 0:
         stage = profile.get("relationship_stage", "froid")
         bank = PROACTIVE_FALLBACKS.get(stage) or PROACTIVE_FALLBACKS["froid"]
     else:
@@ -1800,8 +2013,35 @@ def _fallback_proactive(profile: dict[str, Any], avoid: str = "") -> str:
     return random.choice(bank)
 
 
+def _message_cloture(profile: dict[str, Any], avoid: str = "") -> str:
+    """Adieu de clôture DÉTERMINISTE — beat final avant silence total.
+
+    Envoyé une seule fois, quand le silence fait basculer la relation au
+    stade « rejet » (les pénalités de relance ont fait chuter le score) :
+    un adieu froid cohérent avec les refus courts du stade (REFUS_REJET).
+    Déterministe comme eux : le LLM produirait un ton trop chaleureux.
+    """
+    bank = list(PROACTIVE_CLOSURE)
+    avoid = (avoid or "").strip()
+    if avoid:
+        rest = [m for m in bank if m.strip() != avoid]
+        if rest:
+            bank = rest
+    return random.choice(bank)
+
+
 async def _proactive_for_session(sid: str) -> None:
-    """Vérifie UNE session et envoie un message spontané si dû."""
+    """Vérifie UNE session et envoie un message spontané si dû.
+
+    Gradation réaliste (correctifs session 96598d90d4) :
+    - espacement croissant des relances et plafond d'abandon (voir
+      `_proactive_due`) ; au plafond, le dernier message est un adieu et
+      la période est close (`proactive_closed`) ;
+    - si la pénalité de silence fait basculer au stade « rejet », un
+      unique adieu froid déterministe est envoyé (beat de clôture), puis
+      plus rien : le personnage ne martèle pas de relances après s'être
+      déclaré fini.
+    """
     rcfg = cfg.relation
     st = _state(sid)
     hub = _hub(sid)
@@ -1817,6 +2057,7 @@ async def _proactive_for_session(sid: str) -> None:
 
         old_stage = profile.get("relationship_stage", "froid")
         old_score = int(profile.get("relationship_score", rcfg.default_score))
+        unanswered = int(profile.get("unanswered_messages", 0) or 0)
 
         # Pénalité : message précédent resté sans réponse.
         if penalty:
@@ -1825,36 +2066,63 @@ async def _proactive_for_session(sid: str) -> None:
                 mark_interaction=False,
             )
 
-        # Génération du message (LLM si dispo, sinon fallback déterministe).
-        llm = getattr(app.state, "client", None)
-        ref, now = _last_user_activity(profile)
-        if llm is not None and ref is not None:
-            await _turn_begin()
-            try:
-                message = await _generate_proactive_message(
-                    llm, profile, sid, ref, now,
-                )
-            except Exception as e:                           # noqa: BLE001
-                _log.warning("[%s] message proactif LLM échoué : %s", sid, e)
-            finally:
-                await _turn_end()
-        # Repli déterministe si le LLM n'a rien produit d'utile — et jamais
-        # le même texto que le dernier message du personnage.
         hist = ChatHistory(sid)
         dernier = next(
             (m.content for m in reversed(hist.history) if m.role == "assistant"),
             "",
         )
-        if not message or message.strip() == dernier.strip():
-            message = _fallback_proactive(profile, avoid=dernier)
-        hist.append("assistant", message)
-        profile["unanswered_messages"] = int(
-            profile.get("unanswered_messages", 0) or 0
-        ) + 1
+
+        # Beat de clôture : la pénalité vient de faire basculer au stade
+        # « rejet » → un unique adieu froid, puis silence total.
+        bascule_rejet = (
+            profile.get("relationship_stage") == "rejet" and old_stage != "rejet"
+        )
+        if bascule_rejet:
+            message = _message_cloture(profile, avoid=dernier)
+            hist.append("assistant", message)
+            profile["proactive_closed"] = True
+        else:
+            # C'est-il le dernier message autorisé avant abandon ?
+            final = (
+                unanswered >= 1
+                and (unanswered + 1) >= rcfg.max_proactive_unanswered
+            )
+            # Génération du message (LLM si dispo, sinon fallback
+            # déterministe).
+            llm = getattr(app.state, "client", None)
+            ref, now = _last_user_activity(profile)
+            if llm is not None and ref is not None:
+                await _turn_begin()
+                try:
+                    message = await _generate_proactive_message(
+                        llm, profile, sid, ref, now, final=final,
+                    )
+                except Exception as e:                       # noqa: BLE001
+                    _log.warning(
+                        "[%s] message proactif LLM échoué : %s", sid, e,
+                    )
+                finally:
+                    await _turn_end()
+            # Repli déterministe si le LLM n'a rien produit d'utile — et
+            # jamais le même texto que le dernier message du personnage.
+            if not message or message.strip() == dernier.strip():
+                message = _fallback_proactive(
+                    profile, avoid=dernier, final=final,
+                )
+            hist.append("assistant", message)
+            profile["unanswered_messages"] = unanswered + 1
+            if final:
+                # Dernière relance atteinte : la période est close, le
+                # personnage cesse d'écrire (adieu envoyé).
+                profile["proactive_closed"] = True
+
         profile["last_proactive_at"] = datetime.utcnow().isoformat()
         st.save(profile)
-        _log.info("[%s] message proactif envoyé (sans réponse : %d)",
-                  sid, profile["unanswered_messages"])
+        _log.info(
+            "[%s] message proactif envoyé (sans réponse : %d%s)", sid,
+            profile["unanswered_messages"],
+            ", clôture" if profile.get("proactive_closed") else "",
+        )
 
         # Notification temps réel si la session est ouverte quelque part.
         await hub.broadcast({"type": "dm", "text": message})
@@ -2050,11 +2318,17 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 return
 
             # 2. L'utilisateur répond : les messages proactifs sans réponse
-            #    sont effacés (badge « ! » retiré, pénalité annulée).
+            #    sont effacés (badge « ! » retiré, pénalité annulée) et la
+            #    clôture de relance est levée — une nouvelle période de
+            #    silence pourra relancer le cycle à zéro.
             #    Persisté immédiatement : un échec LLM plus loin ne doit
             #    jamais faire revenir le badge.
-            if int(profile.get("unanswered_messages", 0) or 0) > 0:
+            if (
+                int(profile.get("unanswered_messages", 0) or 0) > 0
+                or profile.get("proactive_closed")
+            ):
                 profile["unanswered_messages"] = 0
+                profile["proactive_closed"] = False
                 st.save(profile)
 
             # 3. Décroissance temporelle si reprise après plusieurs jours.

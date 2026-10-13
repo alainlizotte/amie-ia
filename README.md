@@ -51,7 +51,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée — portraits originaux **versionnés dans le dépôt** (un clone suffit, pas de régénération ComfyUI) |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
 | 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
-| 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit (1 message/jour max) ; sans réponse avant le suivant : **-15 points** de relation — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence : ennui → inquiétude → tristesse → frustration → colère blessée |
+| 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit ; relances espacées de façon croissante puis plafonnées (max 6, dont un adieu), **-15 points** par relance ignorée — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence sans jamais régresser : ennui → inquiétude → tristesse → frustration → colère blessée |
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
@@ -140,12 +140,19 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   selon le stade. Cadrage par défaut : **selfie** (téléphone tenu dans sa
   main, bras tendu), sauf avis contraire exprimé dans la conversation.
 - **Messages proactifs** : après 24 h sans échange, le personnage écrit le
-  premier (1 message/jour max, jamais au stade « rejet »). Si l'utilisateur
-  n'a pas répondu au message précédent avant le suivant : **-15 points**. Le
-  message porte sur le manque de réponse, avec une gradation émotionnelle
-  (ennui → inquiétude → tristesse → frustration → colère blessée). Un badge
-  rouge avec le nombre de messages sans réponse s'affiche sur l'encadré du
-  personnage dans « Mes rencontres » ; il disparaît dès que vous répondez.
+  premier (jamais au stade « rejet »). Les relances sont **espacées de façon
+  croissante** (24 h, puis ×2, ×3…) et **plafonnées** : après 6 messages sans
+  réponse (1 ouverture + 5 niveaux de gradation), le dernier est un adieu et
+  le personnage cesse d'écrire tant que vous n'avez pas répondu. Si une
+  relance fait basculer la relation au stade « rejet » (**-15 points** par
+  relance ignorée), un unique adieu froid est envoyé, puis silence total. La
+  gradation émotionnelle (ennui → inquiétude → tristesse → frustration →
+  colère blessée) est imposée par le serveur : elle ne régresse pas, la
+  durée du silence citée est contrôlée, et le personnage ne vous prête
+  jamais de réponse imaginaire. Un badge rouge avec le nombre de messages
+  sans réponse s'affiche sur l'encadré du personnage dans « Mes rencontres » ;
+  il disparaît dès que vous répondez (et rouvre le cycle pour un prochain
+  silence).
 - **Initiative photo** : au stade Neutre+, le personnage peut envoyer de
   lui-même une photo (probabilité par tour, plus élevée avec un message
   spontané) — même pipeline directeur photo + garde-fous de tenue.

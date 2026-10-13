@@ -91,6 +91,11 @@ class RelationConfig:
     proactive_after_hours: float = 24.0   # silence requis avant initiative
     proactive_interval_hours: float = 24.0  # délai min entre deux initiatives (1/jour)
     proactive_penalty: int = 15         # pénalité si nouveau message sans réponse au précédent
+    # Plafond d'abandon : nombre MAX de messages spontanés consécutifs sans
+    # réponse. 6 = 1 ouverture + la gradation complète (5 niveaux, la
+    # dernière étant un adieu). Atteint → le personnage cesse d'écrire
+    # (proactive_closed) tant que l'utilisateur n'a pas répondu.
+    max_proactive_unanswered: int = 6
     proactive_check_seconds: int = 300  # période de la boucle de vérification
     proactive_first_delay_seconds: int = 30  # délai avant la première vérification
 

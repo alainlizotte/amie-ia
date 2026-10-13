@@ -49,6 +49,11 @@ SCHEMA_SESSION: dict[str, Any] = {
     # (badge « ! » dans « Mes rencontres », pénalité de relation).
     "unanswered_messages": 0,
     "last_proactive_at": None,   # ISO UTC du dernier message spontané envoyé
+    # Période de relance close : le plafond d'abandon est atteint ou le
+    # silence a fait basculer au stade rejet (dernier message d'adieu
+    # envoyé). Plus aucun message spontané tant que l'utilisateur n'a pas
+    # répondu — une personne réelle ne martèle pas de relances.
+    "proactive_closed": False,
 }
 
 
