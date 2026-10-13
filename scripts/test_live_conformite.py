@@ -127,7 +127,14 @@ class JeuLive:
         self.transcript: list[dict] = []
 
     # ---------------------------------------------------------------- REST #
-    def setup(self) -> None:
+    def setup(self, preset_id: str = PRESET,
+              custom: dict | None = None) -> None:
+        """Crée (ou reconnecte) un compte puis une session.
+
+        `preset_id` : personnage prédéfini (par défaut le preset du test).
+        `custom`    : personnage personnalisé (formulaire GUI) — prioritaire
+                      sur `preset_id` quand fourni.
+        """
         c = httpx.Client(base_url=BASE, timeout=30)
         r = c.post("/api/auth/inscription",
                    json={"nom": self.nom, "mot_de_passe": "test1234"})
@@ -136,9 +143,12 @@ class JeuLive:
                        json={"nom": self.nom, "mot_de_passe": "test1234"})
         r.raise_for_status()
         self.token = r.json()["token"]
-        r = c.post("/api/sessions",
-                   json={"preset_id": PRESET,
-                         "user_info": {"name": "Marc-Lee"}},
+        charge: dict = {"user_info": {"name": "Marc-Lee"}}
+        if custom is not None:
+            charge["character"] = custom
+        else:
+            charge["preset_id"] = preset_id
+        r = c.post("/api/sessions", json=charge,
                    headers={"Authorization": f"Bearer {self.token}"})
         r.raise_for_status()
         body = r.json()
@@ -208,8 +218,10 @@ class JeuLive:
             if msg.get("type") == "sys" and msg.get("event") == "auth_failed":
                 raise RuntimeError("auth WS échouée")
 
-    async def _collecter(self, timeout: float, jusqu_dm: bool = True):
-        """Collecte les messages WS jusqu'au dm final (+ profile)."""
+    async def _collecter(self, timeout: float, jusqu_dm: bool = True,
+                         terminaux: tuple[str, ...] = ("image_ready", "error")):
+        """Collecte les messages WS jusqu'au dm final (+ profile) ou à un
+        événement terminal (`terminaux` : image prête, erreur, refus…)."""
         reply_parts: list[str] = []
         dm: str | None = None
         profil: dict | None = None
@@ -239,7 +251,7 @@ class JeuLive:
                 ev = msg.get("event", {})
                 tool_events.append(ev)
                 et = ev.get("type")
-                if et in ("image_ready", "error"):
+                if et in terminaux:
                     return "\n".join(reply_parts), dm, profil, tool_events
         return "\n".join(reply_parts), dm, profil, tool_events
 
@@ -272,14 +284,34 @@ class JeuLive:
         await self.ws.send(json.dumps({"type": "say", "text": texte}))
         return await self._collecter(timeout)
 
+    async def _drainer(self) -> None:
+        """Vide les messages WS en attente (portrait/photo de fond, etc.).
+
+        Le portrait est généré en arrière-plan à la création de session et
+        diffuse des `tool_event` (image_pending / image_ready) : sans vidage,
+        la première demande de photo les confondrait avec sa propre réponse.
+        """
+        while True:
+            try:
+                await asyncio.wait_for(self.ws.recv(), timeout=0.3)
+            except asyncio.TimeoutError:
+                return
+
     async def demande_photo(self, hint: str = "", timeout: float = 300.0) -> dict:
         print(f"\n  📷 demande de photo (hint={hint or '—'})")
+        await self._drainer()
         await self.ws.send(json.dumps(
             {"type": "photo_request", "hint": hint}))
-        _, dm, profil, evs = await self._collecter(timeout, jusqu_dm=False)
+        _, dm, profil, evs = await self._collecter(
+            timeout, jusqu_dm=False,
+            terminaux=("image_ready", "error", "info"))
         types = [e.get("type") for e in evs]
         msgs = [e.get("msg", "") for e in evs]
-        return {"types": types, "msgs": msgs, "image_ready": "image_ready" in types}
+        images = [e.get("image", "") for e in evs
+                  if e.get("type") == "image_ready"]
+        return {"types": types, "msgs": msgs,
+                "image_ready": "image_ready" in types,
+                "image": images[0] if images else ""}
 
     async def attendre_proactif(self, timeout: float) -> dict | None:
         """Attendre un message spontané (dm reçu hors tour)."""
