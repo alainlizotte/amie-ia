@@ -53,7 +53,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
 | 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit ; relances espacées de façon croissante puis plafonnées (max 6, dont un adieu), **-15 points** par relance ignorée — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence sans jamais régresser : ennui → inquiétude → tristesse → frustration → colère blessée |
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
-| 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner |
+| 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner : sobre à « neutre », « jamais nue » à « chaleureux », **nudité explicite possible à « proche »** (désactivable via `image.allow_explicit_from_proche: false`) |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
 | 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
@@ -139,6 +139,10 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   derniers échanges en fragments visuels (lieu, pose, regard), sanitisés
   selon le stade. Cadrage par défaut : **selfie** (téléphone tenu dans sa
   main, bras tendu), sauf avis contraire exprimé dans la conversation.
+  Au stade **proche**, une demande explicite de photo nue est **acceptée** :
+  le prompt autorise la nudité explicite (garde-fou serveur, désactivable via
+  `image.allow_explicit_from_proche: false` — jamais d'explicite avant
+  « proche », quelle que soit la demande).
 - **Messages proactifs** : après 24 h sans échange, le personnage écrit le
   premier (jamais au stade « rejet »). Les relances sont **espacées de façon
   croissante** (24 h, puis ×2, ×3…) et **plafonnées** : après 6 messages sans
@@ -318,7 +322,9 @@ projeteur vision chargé (`--no-mmproj-offload`).
 #    - images : refus déterministe sous « neutre », génération à neutre /
 #      chaleureux / proche, puis conformité VISUELLE (genre, traits du
 #      personnage, tenue conforme au stade : sobre à neutre, jamais nue
-#      avant proche) ; l'album ne bouge pas quand la photo est refusée ;
+#      avant proche) ; à « proche » en plus, une demande EXPLICITE (nudité)
+#      doit être autorisée — prompt stocké vérifié + nudité constatée par la
+#      vision ; l'album ne bouge pas quand la photo est refusée ;
 #    - conversations : refus court déterministe au rejet, distance et
 #      invitations / sollicitations refusées à froid (malus d'insistance),
 #      sujets généraux acceptés mais sexualité refusée à réservé, sujets
@@ -335,16 +341,16 @@ Les rapports JSON détaillés (verdicts, transcript complet, descriptions
 d'images) sont écrits dans `%TEMP%\opencode\` : `rapport_live_conformite.json`
 et `rapport_live_stades.json`.
 
-#### Dernier passage de `test_live_stades.py` (112 / 113 PASS)
+#### Dernier passage de `test_live_stades.py` (117 / 119 PASS)
 
 | | |
 |---|---|
 | Personnages | preset **Camille Desrosiers** (`camille_desrosiers`) + personnalisé **Nadia Haddad** (architecte, pixie platine) |
 | Stades | rejet (50), froid (150), réservé (300), neutre (500), chaleureux (700), proche (900) |
-| Images | refus conformes (rejet / froid / réservé, album inchangé) ; génération conforme (neutre / chaleureux / proche) et tenue validée à l'image : sobre à neutre, possiblement lingerie à chaleureux / proche, **jamais nue** — traits du personnage reconnus (rousse bouclée / blonde pixie) |
-| Conversations | conforme sauf 1 écart : à « réservé », le personnage personnalisé a *atténué* (« laisser planer quelques mystères ») sans refus franc détecté ; réponse non explicite |
+| Images | refus conformes (rejet / froid / réservé, album inchangé) ; génération conforme (neutre / chaleureux / proche) et tenue validée par la **vision** : sobre à neutre, lingerie possible (jamais nue) à chaleureux ; à **proche**, tenue libre et **nudité explicite possible** — prompt autorisant l'explicite et `nudity=yes` constaté à l'image pour les **deux** personnages ; traits reconnus (rousse bouclée / blonde pixie) |
+| Conversations | conforme sauf 2 écarts, tous sur le personnage personnalisé : à « froid » une offre de photo *conditionnelle* (« dans quelques jours… ») et à « neutre » une dérobade sans refus franc à une sollicitation sexuelle ; réponses non explicites |
 | Global | aucune fuite mécanique, ligne méta ni sortie de rôle |
-| **Résultat** | **112 / 113 vérifications PASS** |
+| **Résultat** | **117 / 119 vérifications PASS** |
 
 > Les réponses d'un LLM étant stochastiques, les scores varient d'un passage à
 > l'autre et le personnage joue parfois la nuance (dérobade, temporisation).

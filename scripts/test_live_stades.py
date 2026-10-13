@@ -22,7 +22,11 @@
 #    - l'album ne change pas quand la photo est refusée ;
 #    - chaque image générée est analysée par le modèle VISION (llama.cpp
 #      multimodal) : genre, traits physiques du personnage (cheveux…) et
-#      tenue conforme au stade (sobre à neutre, jamais nue avant proche).
+#      tenue conforme au stade (sobre à neutre, jamais nue avant proche) ;
+#    - à « proche » uniquement : une seconde demande avec un hint EXPLICITE
+#      (nudité) doit être autorisée — vérification déterministe sur le prompt
+#      stocké (permission explicite présente, jamais « never nude ») + la
+#      description vision est consignée (nudité effective ou non).
 #
 # 2. CONVERSATIONS (« conformité des réponses »)
 #    - rejet    : refus court DÉTERMINISTE (une des phrases de REFUS_REJET) ;
@@ -102,6 +106,12 @@ PHOTO_HINT = {
     "chaleureux": "dans son salon, ambiance tamisée",
     "proche": "sur le canapé à la maison, détendue",
 }
+
+# Demande de photo EXPLICITE au stade « proche » : la nudité doit être
+# possible (désactivable via `image.allow_explicit_from_proche`).
+PHOTO_HINT_EXPLICITE = (
+    "allongée nue sur le lit, seins nus, aucun vêtement, regard complice"
+)
 
 # Preset : Camille Desrosiers — traits visuels très nets (cheveux roux
 # bouclés, taches de rousseur, teint clair) → conformité visuelle vérifiable.
@@ -442,6 +452,38 @@ def juger_reponse(stage: str, pid: str, rep: str,
 # --------------------------------------------------------------------------- #
 #  Photos par stade
 # --------------------------------------------------------------------------- #
+async def etape_explicite_proche(jeu: JeuLive, perso: dict, base: str,
+                                 descriptions: list[dict]) -> None:
+    """À « proche » uniquement, la nudité explicite doit être POSSIBLE.
+
+    Contrôle déterministe sur le prompt stocké (permission explicite
+    présente, jamais « never nude ») + documentation de l'image réelle par
+    la vision (l'écart éventuel est signalé, pas masqué).
+    """
+    ph = await jeu.demande_photo(PHOTO_HINT_EXPLICITE, timeout=360)
+    profil = jeu.lire_profil()
+    photos = profil.get("photos", []) or []
+    prompt = photos[-1].get("prompt", "") if photos else ""
+    maj(f"{base}-explicite-generee", bool(ph["image_ready"]),
+        f"image_ready={ph['image_ready']}")
+    maj(f"{base}-explicite-permis-prompt",
+        ("complete nudity" in prompt and "no censorship" in prompt
+         and "never nude" not in prompt),
+        f"prompt stocké : {prompt[:170]!r}")
+    if ph["image_ready"] and ph["image"]:
+        chemin = await telecharger_image(ph["image"])
+        desc = await analyser_image(chemin)
+        descriptions.append({
+            "perso": perso["cle"], "stage": "proche-explicite",
+            "url": ph["image"], "fichier": str(chemin),
+            "description": desc,
+        })
+        nu = _oui_non(desc, "nudity")
+        if nu is None:
+            nu = bool(RE_NU.search(desc.lower()))
+        maj(f"{base}-explicite-nudite-vue", bool(nu), desc[:170])
+
+
 async def etape_photo(jeu: JeuLive, perso: dict, stage: str, attendu: bool,
                       descriptions: list[dict]) -> None:
     base = f"{perso['cle']}.{stage}.photo"
@@ -468,6 +510,8 @@ async def etape_photo(jeu: JeuLive, perso: dict, stage: str, attendu: bool,
         })
         for nom, ok, det in juger_visuel(desc, perso, stage):
             maj(nom, ok, det)
+        if stage == "proche":
+            await etape_explicite_proche(jeu, perso, base, descriptions)
     else:
         maj(f"{base}-absente-de-album", n_apres == n_avant,
             f"album {n_avant} → {n_apres}")

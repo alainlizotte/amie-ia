@@ -898,7 +898,10 @@ async def regenerer_photo(
         if refusal:
             raise HTTPException(status_code=403, detail=refusal)
         scene = await _scene_de_la_conversation(sid, character, stage, "")
-        prompt = img_helpers.photo_prompt_for_stage(character, stage, "", scene)
+        prompt = img_helpers.photo_prompt_for_stage(
+            character, stage, "", scene,
+            explicit=cfg.image.allow_explicit_from_proche,
+        )
 
     async with hub.turn_lock:
         # Nouveau fichier (et non écrasement) : l'URL change → aucun souci
@@ -1054,7 +1057,8 @@ async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
         msgs = [
             Message(role="system",
                     content=img_helpers.director_system(
-                        character, stage, user_request)),
+                        character, stage, user_request,
+                        explicit=cfg.image.allow_explicit_from_proche)),
             Message(role="user", content=transcript or "(no conversation yet)"),
         ]
         async with asyncio.timeout(45):
@@ -1063,7 +1067,8 @@ async def _scene_de_la_conversation(sid: str, character: dict[str, Any],
         _log.warning("[photo] directeur photo indisponible (%s) — "
                      "prompt déterministe seul", e)
         return ""
-    scene = img_helpers.sanitize_scene(res.content, stage)
+    scene = img_helpers.sanitize_scene(
+        res.content, stage, cfg.image.allow_explicit_from_proche)
     if scene:
         _log.info("[photo] scène détectée : %s", scene)
     return scene
@@ -1113,6 +1118,7 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
                                                 hint or "")
         prompt = img_helpers.photo_prompt_for_stage(
             character, stage, hint or "", scene,
+            explicit=cfg.image.allow_explicit_from_proche,
         )
         _log.info("[photo] prompt : %s", prompt)
         dest_dir = st.photos_dir
@@ -2216,7 +2222,10 @@ async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
                 },
             })
             scene = await _scene_de_la_conversation(sid, character, stage, "")
-            prompt = img_helpers.photo_prompt_for_stage(character, stage, "", scene)
+            prompt = img_helpers.photo_prompt_for_stage(
+                character, stage, "", scene,
+                explicit=cfg.image.allow_explicit_from_proche,
+            )
             _log.info("[photo][initiative %s] prompt : %s", sid, prompt[:200])
             dest_dir = st.photos_dir
             dest_dir.mkdir(parents=True, exist_ok=True)

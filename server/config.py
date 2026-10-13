@@ -119,6 +119,11 @@ class ImageConfig:
     initiative_enabled: bool = True
     initiative_chance_turn: float = 0.10       # proba par tour de conversation
     initiative_chance_proactive: float = 0.30  # proba avec un message spontané
+    # Nudité explicite : autorisée à partir du stade « proche » (garde-fou
+    # serveur — jamais avant, quelle que soit la demande du LLM). Passer à
+    # False pour plafonner toutes les photos à « jamais nue » (stade proche
+    # compris).
+    allow_explicit_from_proche: bool = True
 
 
 @dataclass

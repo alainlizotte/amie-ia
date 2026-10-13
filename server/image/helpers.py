@@ -9,10 +9,11 @@ generate_image et construire lui-même le prompt visuel), ici :
   (garde-fou technique que le LLM ne peut pas contourner).
 
 Échelle de tenue par stade :
-- rejet / froid : aucune photo refusée côté GUI ;
-- reserve / neutre : sobre, complètement habillée ;
+- rejet / froid / reserve : photo refusée (message déterministe côté serveur) ;
+- neutre : sobre, complètement habillée ;
 - chaleureux : petite tenue / lingerie acceptée, jamais nue ;
-- proche : sans restriction.
+- proche : sans restriction — nudité explicite autorisée (désactivable via
+  `image.allow_explicit_from_proche: false`).
 """
 
 from __future__ import annotations
@@ -38,6 +39,11 @@ REFUSALS_BY_STAGE = {
     "froid": "🚫 Trop tôt : vous êtes encore des inconnus. Continuez la conversation.",
     "reserve": "🚫 Le personnage n'est pas encore à l'aise pour partager des photos.",
 }
+
+# Stade à partir duquel la nudité explicite est autorisée (garde-fou dur :
+# le LLM ne peut RIEN générer d'explicite avant, même s'il le demandait).
+# Désactivable globalement via `image.allow_explicit_from_proche: false`.
+STAGE_EXPLICITE = "proche"
 
 
 def get_backend(base_url: str = "", timeout_total: int = 300) -> Optional[ComfyUIBackend]:
@@ -126,10 +132,23 @@ def _wants_alt_framing(*fragments: str) -> bool:
     return any(_FRAMING_HINT_RE.search(f or "") for f in fragments)
 
 
-def outfit_clause(stage: str) -> str:
-    """Contrainte de tenue par stade — toujours présente (garde-fou dur)."""
-    if stage == "proche":
-        return "outfit unrestricted, intimate tasteful composition"
+def outfit_clause(stage: str, explicit: bool = True) -> str:
+    """Contrainte de tenue par stade — toujours présente (garde-fou dur).
+
+    `explicit` : au stade « proche » uniquement, autorise la nudité explicite
+    (désactivable via `image.allow_explicit_from_proche`). Sans effet aux
+    autres stades, où la pudeur reste imposée.
+    """
+    if stage == STAGE_EXPLICITE:
+        if explicit:
+            return (
+                "outfit unrestricted — the state of dress described above is "
+                "fully allowed, including complete nudity, topless or "
+                "partially undressed, explicit nudity permitted, no censorship"
+            )
+        return (
+            "outfit unrestricted but never nude, intimate tasteful composition"
+        )
     if stage == "chaleureux":
         return (
             "wearing revealing casual outfit or elegant lingerie, "
@@ -147,6 +166,7 @@ def photo_prompt_for_stage(
     stage: str,
     user_hint: str = "",
     scene: str = "",
+    explicit: bool = True,
 ) -> str:
     """Prompt d'une photo demandée en cours de session — contraint par stade.
 
@@ -154,6 +174,8 @@ def photo_prompt_for_stage(
     `scene`     : description complète produite par le « directeur photo »
                   (apparence actuelle, tenue RÉELLE portée, lieu, pose,
                   regard — déjà sanitizée via sanitize_scene).
+    `explicit`  : au stade « proche », autorise la nudité explicite
+                  (voir `image.allow_explicit_from_proche`).
 
     Quand la scène existe, elle fait foi SEULE pour l'apparence/la tenue :
     la fiche du personnage n'est PAS réinjectée (son style quotidien —
@@ -166,6 +188,10 @@ def photo_prompt_for_stage(
     — imposé sauf si la scène ou le hint utilisateur réclame explicitement
     un autre cadrage (« sauf avis contraire »).
     """
+    # Même garde-fou que pour la scène : le hint peut contenir des mots que le
+    # stade n'autorise pas (nudité hors « proche », lingerie avant
+    # « chaleureux ») — il ne doit pas contourner la règle de tenue.
+    user_hint = sanitize_scene(user_hint, stage, explicit)
     scene_clean = (scene or "").strip(" ,.")
     if scene_clean:
         framing = (
@@ -173,7 +199,7 @@ def photo_prompt_for_stage(
             else f"{selfie_clause(character)}, "
         )
         return (
-            f"photograph of {scene_clean}, {framing}{outfit_clause(stage)}, "
+            f"photograph of {scene_clean}, {framing}{outfit_clause(stage, explicit)}, "
             "photorealistic, natural lighting, warm colors, "
             "romantic dating profile photo style, high resolution, no text"
         )
@@ -186,7 +212,7 @@ def photo_prompt_for_stage(
         else f"{selfie_clause(character)}, "
     )
     return (
-        f"photograph of {desc}{hint}, {framing}{outfit_clause(stage)}, "
+        f"photograph of {desc}{hint}, {framing}{outfit_clause(stage, explicit)}, "
         "photorealistic, natural lighting, warm colors, "
         "romantic dating profile photo style, high resolution, no text"
     )
@@ -195,13 +221,27 @@ def photo_prompt_for_stage(
 # --------------------------------------------------------------------------- #
 #  Directeur photo : scène dérivée de la conversation (appel LLM côté serveur)
 # --------------------------------------------------------------------------- #
-_CLOTHING_RULES = {
-    "proche": "no clothing restriction",
-    "chaleureux": (
-        "revealing outfit or elegant lingerie allowed, but never nude"
-    ),
-}
 _CLOTHING_RULE_DEFAULT = "fully dressed, sober outfit, nothing suggestive"
+
+
+def _clothing_rule(stage: str, explicit: bool = True) -> str:
+    """Niveau de tenue transmis au directeur photo (« Clothing level allowed »).
+
+    `explicit` : au stade « proche », autorise explicitement la nudité
+    (désactivable via `image.allow_explicit_from_proche`). Ailleurs, la
+    pudeur reste imposée quelle que soit la demande.
+    """
+    if stage == STAGE_EXPLICITE:
+        if explicit:
+            return (
+                "no clothing restriction — nudity and explicit content fully "
+                "allowed (fully nude, topless or partially undressed)"
+            )
+        return "no clothing restriction, but never nude"
+    if stage == "chaleureux":
+        return "revealing outfit or elegant lingerie allowed, but never nude"
+    return _CLOTHING_RULE_DEFAULT
+
 
 _MOTS_NUDITE = re.compile(
     r"\b(nudes?|naked|nudity|topless|undressed|undressing|unclothed|"
@@ -221,29 +261,32 @@ _MOTS_SUGGESTIFS = re.compile(
 )
 
 
-def sanitize_scene(scene: str, stage: str) -> str:
+def sanitize_scene(scene: str, stage: str, explicit: bool = True) -> str:
     """Nettoie les fragments de scène produits par le LLM.
 
-    - supprime toute mention de nudité tant que le stade n'est pas « proche »
-      (garde-fou dur : le LLM ne peut pas contourner les règles de tenue) ;
+    - supprime toute mention de nudité tant que le stade n'autorise pas
+      l'explicite (stade < « proche », ou `image.allow_explicit_from_proche:
+      false`) — garde-fou dur : le LLM ne peut pas contourner les règles de
+      tenue ;
     - supprime aussi les mentions de lingerie/sous-vêtements/vocabulaire
       sensuel aux stades pudeurs (rejet → neutre), qui contrediraient la
       clause de tenue « fully dressed » injectée dans le prompt final ;
     - retire guillemets et retours à la ligne, borne la longueur.
     """
+    nudite_ok = stage == STAGE_EXPLICITE and explicit
     s = str(scene or "").replace('"', " ")
-    if stage != "proche":
+    if not nudite_ok:
         s = _MOTS_NUDITE.sub("", s)
     if stage in ("rejet", "froid", "reserve", "neutre"):
         s = _MOTS_SUGGESTIFS.sub("", s)
     s = " ".join(s.split())
-    if stage != "proche":
+    if stage != STAGE_EXPLICITE:
         s = ", ".join(p.strip(" ,") for p in s.split(",") if p.strip(" ,"))
     return s[:300].strip(" ,.")
 
 
 def director_system(character: dict[str, Any], stage: str,
-                    user_request: str = "") -> str:
+                    user_request: str = "", explicit: bool = True) -> str:
     """Consigne système du « directeur photo » (appel chat non-streaming).
 
     Le directeur produit la description COMPLÈTE de la photo : apparence
@@ -253,11 +296,13 @@ def director_system(character: dict[str, Any], stage: str,
     `user_request` : demande explicite de l'utilisateur (champ au moment du
     📷). Elle a priorité sur la scène générique si le personnage l'a
     acceptée dans la conversation.
+    `explicit` : au stade « proche », autorise le directeur à décrire la
+    nudité sans censure (voir `image.allow_explicit_from_proche`).
     """
     p = _pronoun(character)
     poss = _possessive(character)
     name = character.get("name") or "the character"
-    rule = _CLOTHING_RULES.get(stage, _CLOTHING_RULE_DEFAULT)
+    rule = _clothing_rule(stage, explicit)
     lines = [
         "You are the art director of a photorealistic photo generator.",
         f"Describe the COMPLETE visual content of one photograph of {name}: "
@@ -281,14 +326,25 @@ def director_system(character: dict[str, Any], stage: str,
         "Output short comma-separated English fragments, maximum 60 words, "
         "no full sentences. Strictly consistent with what was said or done.",
         f"Clothing level allowed: {rule}.",
-        "No camera jargon, no quality adjectives, no text or watermarks.",
     ]
-    if user_request and user_request.strip():
-        lines.insert(
-            4,
-            f"The user explicitly asks for THIS photo: "
-            f"{user_request.strip()[:200]}",
+    if stage == STAGE_EXPLICITE and explicit:
+        lines.append(
+            "At this closest stage, explicit nudity is fully allowed: if the "
+            "user asks for a nude, topless or explicit photo — or the intimate "
+            "context clearly implies it — describe the nudity explicitly, "
+            "without censorship or euphemism."
         )
+    lines.append("No camera jargon, no quality adjectives, no text or watermarks.")
+    if user_request and user_request.strip():
+        # Demandes hors cadre (nudité hors « proche », sollicitation sexuelle
+        # aux stades bas) : filtrées comme la scène — elles ne peuvent pas
+        # forcer le directeur à décrire ce que le stade interdit.
+        req = sanitize_scene(user_request, stage, explicit)
+        if req:
+            lines.insert(
+                4,
+                f"The user explicitly asks for THIS photo: {req[:200]}",
+            )
     return " ".join(lines)
 
 

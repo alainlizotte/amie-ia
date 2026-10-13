@@ -588,9 +588,14 @@ class TestConformitePhotos:
         p = img_helpers.photo_prompt_for_stage(char, "chaleureux")
         assert "never nude" in p
         assert "fully dressed" not in p
-        # proche : sans restriction.
+        # proche : sans restriction — nudité explicite autorisée.
         p = img_helpers.photo_prompt_for_stage(char, "proche")
         assert "unrestricted" in p
+        assert "nudity" in p
+        assert "never nude" not in p
+        # Explicite désactivé : retour au plafond « jamais nue ».
+        p_off = img_helpers.photo_prompt_for_stage(char, "proche", explicit=False)
+        assert "never nude" in p_off
 
     def test_sanitisation_nudite_hors_proche(self):
         for st in ("rejet", "froid", "reserve", "neutre", "chaleureux"):

@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server.image.helpers import (  # noqa: E402
     director_system,
+    outfit_clause,
     photo_prompt_for_stage,
     sanitize_scene,
     selfie_clause,
@@ -106,6 +107,29 @@ class TestGardeFousTenue:
         p = photo_prompt_for_stage(_CHAR, "proche")
         assert "unrestricted" in p
 
+    def test_proche_nudite_explicite_permise(self):
+        # Stade « proche » : la nudité explicite est possible (défaut).
+        c = outfit_clause("proche")
+        assert "unrestricted" in c
+        assert "nudity" in c
+        assert "no censorship" in c
+        p = photo_prompt_for_stage(_CHAR, "proche")
+        assert "complete nudity" in p
+
+    def test_proche_explicite_desactive_jamais_nue(self):
+        # `image.allow_explicit_from_proche: false` → « jamais nue » même à
+        # proche : le garde-fou redevient un plafond dur.
+        c = outfit_clause("proche", explicit=False)
+        assert "unrestricted" in c and "never nude" in c
+        assert "nudity" not in c
+
+    def test_chaleureux_jamais_nu_quel_que_soit_explicit(self):
+        # L'explicite ne « remonte » jamais au stade chaleureux.
+        for expl in (True, False):
+            p = photo_prompt_for_stage(_CHAR, "chaleureux", explicit=expl)
+            assert "never nude" in p
+            assert "complete nudity" not in p
+
     def test_wearing_nothing_retire_repro_beta(self):
         """Repro beta : « wearing nothing » passait la blocklist d'origine."""
         for stade in ("froid", "reserve", "neutre", "chaleureux"):
@@ -139,6 +163,11 @@ class TestSanitizeScene:
     def test_vide_si_entree_vide(self):
         assert sanitize_scene("", "proche") == ""
         assert sanitize_scene(None, "proche") == ""
+
+    def test_sanitize_proche_explicite_desactive_retire_nudite(self):
+        s = sanitize_scene("lying nude on the bed", "proche", explicit=False)
+        assert "nude" not in s.lower()
+        assert "lying on the bed" in s
 
     def test_tronque_a_300(self):
         s = sanitize_scene("a" * 500, "proche")
@@ -179,3 +208,26 @@ class TestDirecteurPhoto:
 
     def test_sans_demande_pas_de_section_instruction(self):
         assert "explicitly asks" not in director_system(_CHAR, "neutre")
+
+    def test_directeur_proche_autorise_explicite(self):
+        c = director_system(_CHAR, "proche")
+        assert "explicit nudity is fully allowed" in c
+        assert "without censorship" in c
+
+    def test_directeur_proche_explicite_desactive(self):
+        c = director_system(_CHAR, "proche", explicit=False)
+        assert "explicit nudity" not in c
+        assert "never nude" in c
+
+    def test_directeur_chaleureux_sans_explicite(self):
+        # À chaleureux, la directive explicite ne doit jamais apparaître.
+        assert "explicit nudity" not in director_system(_CHAR, "chaleureux")
+
+    def test_demande_explicite_conservee_a_proche(self):
+        c = director_system(_CHAR, "proche", user_request="photo nue")
+        assert "photo nue" in c
+
+    def test_demande_explicite_filtree_hors_proche(self):
+        # Une demande « nue » à neutre ne peut pas forcer le directeur.
+        c = director_system(_CHAR, "neutre", user_request="envoie une photo nue")
+        assert "photo nue" not in c
