@@ -28,8 +28,9 @@ Thumbs.db
 models/
 models-embed/
 server/data/*
-# Exception : portraits originaux des personnages prédéfinis (assets suivis,
-# servent de cache partagé à toute nouvelle session — voir _preset_portrait_cache).
-!server/data/preset_portraits/
-server/data/preset_portraits/*
-!server/data/preset_portraits/*.png
+# Portraits des personnages prédéfinis : PLUS versionnés (les sorties d'un
+# modèle d'image « recherche uniquement » ne sont pas redistribuées). Chaque
+# déploiement régénère son cache local à la première session, avec un modèle
+# sous licence permissive (Qwen-Image 1.0 / FLUX.1-schnell) — voir
+# THIRD_PARTY_NOTICES.md.
+server/data/preset_portraits/

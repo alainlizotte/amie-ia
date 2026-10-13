@@ -17,7 +17,9 @@ tient à son rôle défini — jamais un assistant.
 
 Le tout tourne **en local sur votre machine** (aucune donnée envoyée sur
 Internet) : chat sous llama.cpp (Qwen 3.5), images sous ComfyUI
-(**Qwen Image 2.1 Turbo**), mémoire vectorielle sous un serveur d'embeddings.
+(**Qwen-Image 1.0** ou **FLUX.1 [schnell]** — modèles sous licence permissive
+Apache 2.0 ; voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)),
+mémoire vectorielle sous un serveur d'embeddings.
 
 ---
 
@@ -48,12 +50,12 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | | |
 |---|---|
 | 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
-| 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée — portraits originaux **versionnés dans le dépôt** (un clone suffit, pas de régénération ComfyUI) |
+| 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée — portraits **générés localement à la première session** (aucune image pré-générée n'est versionnée dans le dépôt) |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
 | 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
 | 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit ; relances espacées de façon croissante puis plafonnées (max 6, dont un adieu), **-15 points** par relance ignorée — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence sans jamais régresser : ennui → inquiétude → tristesse → frustration → colère blessée |
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
-| 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner : sobre à « neutre », « jamais nue » à « chaleureux », **nudité explicite possible à « proche »** (désactivable via `image.allow_explicit_from_proche: false`) |
+| 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner : sobre à « neutre », « jamais nue » à « chaleureux », **« jamais nue » à « proche » par défaut** (nudité explicite activable via `image.allow_explicit_from_proche: true`) |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
 | 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
@@ -81,7 +83,7 @@ server/
 data/
   character_presets/   25 personnages + 275 scénarios (portés de l'original)
 server/data/     Runtime : sessions, historiques, photos, utilisateurs.json
-                 + preset_portraits/ (25 portraits suivis dans le dépôt)
+                 + preset_portraits/ (cache local des portraits — NON versionné)
 config/          config.yaml (local, gitigné) — voir config.example.yaml
 ```
 
@@ -139,10 +141,11 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   derniers échanges en fragments visuels (lieu, pose, regard), sanitisés
   selon le stade. Cadrage par défaut : **selfie** (téléphone tenu dans sa
   main, bras tendu), sauf avis contraire exprimé dans la conversation.
-  Au stade **proche**, une demande explicite de photo nue est **acceptée** :
-  le prompt autorise la nudité explicite (garde-fou serveur, désactivable via
-  `image.allow_explicit_from_proche: false` — jamais d'explicite avant
-  « proche », quelle que soit la demande).
+  **Nudité explicite : désactivée par défaut** (plafond « jamais nue », stade
+  « proche » compris). Elle peut être activée via
+  `image.allow_explicit_from_proche: true` — dans ce cas seulement, une
+  demande explicite de photo nue est acceptée à partir du stade « proche »
+  (jamais d'explicite avant « proche », quelle que soit la demande).
 - **Messages proactifs** : après 24 h sans échange, le personnage écrit le
   premier (jamais au stade « rejet »). Les relances sont **espacées de façon
   croissante** (24 h, puis ×2, ×3…) et **plafonnées** : après 6 messages sans
@@ -163,7 +166,7 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif
   (immédiat ou après un délai configurable), et **systématiquement déchargé
   avant chaque génération d'image puis rechargé une fois la génération
-  terminée** — ComfyUI (Qwen Image 2.1 Turbo) dispose ainsi toujours de la
+  terminée** — ComfyUI (le modèle d'image configuré) dispose ainsi toujours de la
   place nécessaire, même lorsque le modèle de chat reste chargé entre les
   tours.
 - **18+** : mention affichée sur l'écran de connexion + case de déclaration
@@ -175,8 +178,8 @@ Prérequis :
 - **Docker Desktop** avec support GPU NVIDIA (recommandé ; sans GPU, voir la
   note dans `docker-compose.yml` pour passer en CPU) ;
 - les **modèles GGUF** téléchargés (voir « 🧠 Modèles » ci-dessous) ;
-- *(optionnel)* **ComfyUI** sur l'hôte (port 8188) pour les images — inutile
-  pour les portraits des personnages prédéfinis (inclus au dépôt).
+- *(optionnel)* **ComfyUI** sur l'hôte (port 8188) pour les images — utile
+  pour générer les portraits des personnages prédéfinis (plus inclus au dépôt).
 
 ```powershell
 git clone https://github.com/alainlizotte/amie-ia.git
@@ -253,27 +256,28 @@ complet dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
   usage libre, y compris pour ce jeu.
 - **embeddinggemma-300M** : Gemma Terms of Use (usage commercial autorisé) ;
   **nomic-embed-text-v1.5** : Apache 2.0.
-- ⚠️ **Qwen-Image-2.1-Turbo** : Qwen RESEARCH LICENSE AGREEMENT —
-  **recherche/évaluation uniquement**. L'utiliser pour générer des images de
-  jeu (divertissement) est hors du champ de la licence, même gratuitement et
-  même en open source. Pour un usage pleinement en règle, préférer un modèle
-  sous licence permissive (Qwen-Image 1.0, FLUX.1-schnell — Apache 2.0).
+- ✅ **Génération d'images : Qwen-Image (1.0)** ou **FLUX.1 [schnell]** —
+  Apache 2.0, usage libre (**recommandé**).
+- ❌ **Qwen-Image-2.1-Turbo n'est plus recommandé** : Qwen RESEARCH LICENSE
+  AGREEMENT — **recherche/évaluation uniquement**. L'utiliser pour générer des
+  images de jeu (divertissement) est **hors du champ de la licence**, même
+  gratuitement, même en open source, même en local et même sans redistribuer
+  les images. Ce dépôt ne distribue ni le modèle ni ses sorties.
 
 ### Modèles d'images (ComfyUI)
 
-Les portraits et photos de session sont générés par ComfyUI avec
-**Qwen Image 2.1 Turbo** (`server/image/workflows/image_qwen_image_2_1_api.json`).
+La génération d'images est **optionnelle** et délègue à un serveur
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI) installé séparément.
+**Modèle recommandé : [Qwen-Image (1.0)](https://huggingface.co/Qwen/Qwen-Image)
+ou [FLUX.1 [schnell]](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
+— Apache 2.0** (usage libre, y compris pour ce jeu). Adaptez le workflow
+ComfyUI au modèle choisi (mêmes nœuds de base, autres poids).
 
-> ⚠️ **Licence** : Qwen-Image-2.1-Turbo est sous la Qwen RESEARCH LICENSE
-> AGREEMENT (recherche/évaluation uniquement) — voir
-> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) et la section
-> « 🧾 Licences des modèles » ci-dessus.
-Les fichiers de modèles attendus côté ComfyUI sont :
-`qwen_image_2.1_turbo_int8_convrot.safetensors` (UNet),
-`qwen3vl_8b_int8_convrot.safetensors` (CLIP/encodeur texte) et
-`qwen_image_2.1_vae_bf16.safetensors` (VAE). Le workflow d'édition
-(`image_qwen_image_2_1_image_edit_api.json`, image → image) est conservé pour
-un usage futur — voir `USAGE_WORKFLOWS` dans `server/image/comfyui.py`.
+> ⚠️ **Le workflow livré** (`server/image/workflows/image_qwen_image_2_1_api.json`)
+> référence **Qwen-Image-2.1-Turbo**, sous la Qwen RESEARCH LICENSE AGREEMENT
+> (**recherche/évaluation uniquement**, donc inadapté à un jeu). Il est
+> conservé pour compatibilité mais **n'est plus recommandé** — voir
+> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Avant chaque génération, le modèle de chat est déchargé de la VRAM puis
 rechargé à la fin (voir `server/gpu.py`).
 
@@ -360,7 +364,8 @@ et `rapport_live_stades.json`.
 
 Le code de ce dépôt est distribué sous licence [MIT](LICENSE).
 
-Les modèles d'IA ne sont pas inclus : voir
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) pour leurs licences
-(Qwen3.5 : Apache 2.0 ; Qwen-Image-2.1 : licence de recherche uniquement, avec
-alternatives permissives ; [copie de la licence Qwen](QWEN_RESEARCH_LICENSE.txt)).
+Les modèles d'IA ne sont **pas** inclus et **aucune image générée n'est
+versionnée** : voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) pour les
+licences (Qwen3.5 : Apache 2.0 ; génération d'images recommandée sous licence
+permissive — Qwen-Image 1.0 / FLUX.1-schnell, Apache 2.0 ; [copie de la licence
+Qwen Research](QWEN_RESEARCH_LICENSE.txt)).

@@ -101,8 +101,8 @@ image:
   initiative_enabled: true
   initiative_chance_turn: 0.10       # proba par tour de conversation
   initiative_chance_proactive: 0.30  # proba avec un message spontané
-  # Nudité explicite : autorisée à partir du stade « proche » (garde-fou
-  # serveur — jamais avant, quelles que soient les demandes faites dans la
-  # conversation). Passer à false pour plafonner à « jamais nue » (proche
-  # compris).
-  allow_explicit_from_proche: true
+  # Nudité explicite : DÉSACTIVÉE PAR DÉFAUT dans ce dépôt (plafond « jamais
+  # nue », stade « proche » compris). Passez à true pour l'autoriser à partir
+  # du stade « proche » (garde-fou serveur : jamais avant, quelles que soient
+  # les demandes faites dans la conversation).
+  allow_explicit_from_proche: false
