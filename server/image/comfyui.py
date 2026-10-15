@@ -2,13 +2,18 @@
 
 Soumission d'un workflow JSON
 (format API) via `POST /prompt`, polling `GET /history/{id}`, téléchargement
-du PNG via `GET /view`. Deux usages :
-- « portrait » : photo de référence du personnage (création de session) ;
-- « photo »    : photos supplémentaires demandées pendant la session.
+du PNG via `GET /view`. Trois usages :
+- « portrait »   : photo de référence du personnage (création de session) ;
+- « photo »      : photos supplémentaires demandées pendant la session ;
+- « photo_edit » : ÉDITION d'une image de référence (image → image) — photo
+  souvenir d'un rendez-vous : la photo de profil du JOUEUR sert de canevas
+  et le personnage est ajouté à ses côtés (voir helpers.souvenir_edit_prompt).
 
-Les deux usages partagent le graphe de génération **Qwen Image 2.1 Turbo**
-(texte → image). Un export d'édition (image → image) est conservé dans le
-dossier `workflows/` pour un usage futur (voir `USAGE_WORKFLOWS`).
+Les deux premiers usages partagent le graphe de génération **Qwen Image 2.1
+Turbo** (texte → image). Le troisième utilise l'export d'édition
+« image_qwen_image_2_1_image_edit_api.json » (LoadImage + TextEncodeQwenImage21
+en mode latent d'image ; la chaîne d'enrichissement du prompt du graphe est
+court-circuitée par son nœud de bascule — le prompt serveur fait foi).
 """
 
 from __future__ import annotations
@@ -18,21 +23,24 @@ import json
 import os
 import random
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 
 from .. import gpu as _gpu
 
-USAGES_VALIDES = {"portrait", "photo"}
+USAGES_VALIDES = {"portrait", "photo", "photo_edit"}
 
-# Workflow ComfyUI utilisé pour chaque usage. Les deux usages pointent vers
-# le graphe de génération Qwen Image 2.1 Turbo (texte → image) ; il suffit de
-# changer cette table pour basculer un usage sur un autre export (ex. le
-# workflow d'édition « image_qwen_image_2_1_image_edit_api.json »).
-USAGE_WORKFLOWS: dict[str, str] = {
+# Workflows par défaut (surchargeables via la config image.workflow /
+# image.workflow_edit — passée au constructeur par get_backend). Les deux
+# premiers usages pointent vers le graphe de génération Qwen Image 2.1
+# (texte → image) ; « photo_edit » utilise l'export d'édition (LoadImage +
+# TextEncodeQwenImage21 en mode latent d'image).
+DEFAULT_WORKFLOWS: dict[str, str] = {
     "portrait": "image_qwen_image_2_1_api.json",
     "photo": "image_qwen_image_2_1_api.json",
+    "photo_edit": "image_qwen_image_2_1_image_edit_api.json",
 }
 
 # Classes de nœuds d'encodage texte reconnues par le patching : l'ancien
@@ -52,12 +60,23 @@ class ComfyUIError(Exception):
 class ComfyUIBackend:
     """Cliente HTTP légère pour soumettre un workflow ComfyUI et récupérer le PNG."""
 
-    def __init__(self, base_url: str = "", timeout_total: int = DEFAULT_TIMEOUT_TOTAL):
+    def __init__(
+        self,
+        base_url: str = "",
+        timeout_total: int = DEFAULT_TIMEOUT_TOTAL,
+        workflows: Optional[dict[str, str]] = None,
+    ):
         self.base_url = (
             base_url
             or os.environ.get("COMFYUI_BASE_URL", "http://127.0.0.1:8188")
         ).rstrip("/")
         self.timeout_total = timeout_total
+        # Table usage → fichier de workflow (config image.workflow[_edit]).
+        self.workflows = dict(DEFAULT_WORKFLOWS)
+        if workflows:
+            for k, v in workflows.items():
+                if k in self.workflows and v:
+                    self.workflows[k] = v
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         self._workflows_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "workflows"
@@ -69,7 +88,7 @@ class ComfyUIBackend:
     # ------------------------------------------------------------------ #
     def _load_workflow(self, usage: str) -> dict[str, Any]:
         candidats: list[str] = []
-        mappe = USAGE_WORKFLOWS.get(usage)
+        mappe = self.workflows.get(usage)
         if mappe:
             candidats.append(mappe)
         # Repli : convention historique `<usage>.json` / `<usage>.api.json`
@@ -178,6 +197,39 @@ class ComfyUIBackend:
             raise ComfyUIError(f"Réponse ComfyUI inattendue (pas de prompt_id) : {data}")
         return data["prompt_id"]
 
+    async def upload_reference(self, ref_path: str) -> str:
+        """Téléverse une image de référence dans l'entrée de ComfyUI.
+
+        Renvoie le nom de fichier côté serveur (à injecter dans le nœud
+        LoadImage du graphe d'édition). `overwrite=true` : le même fichier
+        peut être re-téléversé après une mise à jour de la photo.
+        """
+        p = Path(ref_path)
+        if not p.is_file():
+            raise ComfyUIError(f"Image de référence introuvable : {ref_path}")
+        data = p.read_bytes()
+        files = {"image": (p.name, data, "application/octet-stream")}
+        form = {"overwrite": "true", "type": "input"}
+        try:
+            r = await self._client.post("/upload/image", data=form, files=files)
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ComfyUIError(f"Échec POST /upload/image : {e}") from e
+        payload = r.json()
+        nom = str(payload.get("name") or "").strip()
+        if not nom:
+            raise ComfyUIError(f"Réponse d'upload inattendue : {payload}")
+        subfolder = str(payload.get("subfolder") or "").strip()
+        return f"{subfolder}/{nom}" if subfolder else nom
+
+    @staticmethod
+    def _find_load_image_node(graph: dict[str, Any]) -> Optional[str]:
+        """Clé du premier nœud LoadImage du graphe (mode édition)."""
+        for k, v in graph.items():
+            if isinstance(v, dict) and v.get("class_type") == "LoadImage":
+                return k
+        return None
+
     async def _poll_history(self, prompt_id: str) -> dict[str, Any]:
         deadline = time.time() + self.timeout_total
         while time.time() < deadline:
@@ -228,12 +280,29 @@ class ComfyUIBackend:
         prompt_text: str,
         dest_path: str,
         seed: Optional[int] = None,
+        ref_path: Optional[str] = None,
     ) -> tuple[str, int]:
-        """Génère une image via ComfyUI et l'écrit dans `dest_path`."""
+        """Génère une image via ComfyUI et l'écrit dans `dest_path`.
+
+        `ref_path` : image de référence (mode ÉDITION — usage « photo_edit »).
+        Elle est téléversée dans l'entrée ComfyUI et branchée sur le nœud
+        LoadImage du graphe ; le prompt texte est injecté en littéral dans
+        le nœud d'encodage (la chaîne d'enrichissement du graphe est
+        court-circuitée : le prompt serveur est déjà construit par le
+        « directeur photo »).
+        """
         if usage not in USAGES_VALIDES:
             raise ComfyUIError(f"Usage '{usage}' inconnu. Validés : {sorted(USAGES_VALIDES)}.")
         graph = self._load_workflow(usage)
         graph, seed = self._patch_workflow(graph, prompt_text, usage, seed)
+        if ref_path is not None:
+            nom_serveur = await self.upload_reference(ref_path)
+            load_key = self._find_load_image_node(graph)
+            if load_key is None:
+                raise ComfyUIError(
+                    "Graphe d'édition sans nœud LoadImage — workflow incompatible."
+                )
+            graph[load_key]["inputs"]["image"] = nom_serveur
         # Arbitrage GPU : attend la fin du tour LLM en cours (une soumission
         # ComfyUI ne doit JAMAIS chevaucher une requête llama.cpp). Une
         # génération portée par le tour LLM lui-même (photo d'initiative)

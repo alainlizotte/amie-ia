@@ -98,6 +98,12 @@ class RelationConfig:
     max_proactive_unanswered: int = 6
     proactive_check_seconds: int = 300  # période de la boucle de vérification
     proactive_first_delay_seconds: int = 30  # délai avant la première vérification
+    # Rendez-vous interactifs (« réalisateur invisible » — dates.py) : le
+    # personnage propose une activité en texto, le joueur répond
+    # naturellement, le serveur enchaîne les étapes. Aucune interface dédiée.
+    dates_enabled: bool = True
+    date_cooldown_hours: float = 48.0   # délai min entre deux propositions
+    date_min_interactions: int = 3      # échanges minimum avant une proposition
 
 
 @dataclass
@@ -120,10 +126,16 @@ class ImageConfig:
     initiative_chance_turn: float = 0.10       # proba par tour de conversation
     initiative_chance_proactive: float = 0.30  # proba avec un message spontané
     # Nudité explicite : autorisée à partir du stade « proche » (garde-fou
-    # serveur — jamais avant, quelle que soit la demande du LLM). Passer à
+    # serveur - jamais avant, quelle que soit la demande du LLM). Passer à
     # False pour plafonner toutes les photos à « jamais nue » (stade proche
     # compris).
     allow_explicit_from_proche: bool = True
+    # Workflows ComfyUI (format API exporté) — fichiers dans
+    # server/image/workflows/. Valeurs par défaut : ceux versionnés dans le
+    # dépôt ; chaque installation peut pointer vers ses propres fichiers
+    # locaux (ex. variantes NSFW avec LoRA, non versionnées).
+    workflow: str = "image_qwen_image_2_1_api.json"          # texte → image
+    workflow_edit: str = "image_qwen_image_2_1_image_edit_api.json"  # édition
 
 
 @dataclass

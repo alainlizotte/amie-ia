@@ -271,6 +271,8 @@ class PromptBuilder:
         pending_event: Optional[dict[str, Any]],
         extra_directive: str = "",
         user_profil: Optional[dict[str, Any]] = None,
+        game_directive: str = "",
+        date_directive: str = "",
     ) -> str:
         """Assemble le message système complet du tour.
 
@@ -279,6 +281,9 @@ class PromptBuilder:
         `user_profil` : fiche « dating app » de l'utilisateur (server/
         user_profile.py) — injectée pour que le personnage sache avec qui
         il parle.
+        `game_directive` : bloc mini-jeu en cours / résolution de jeu
+        (server/relation/games.py) — le LLM incarne le personnage autour,
+        sans jamais décider des contenus ni de l'issue.
         """
         parts = [
             self.persona_prompt(),
@@ -296,4 +301,8 @@ class PromptBuilder:
         event_block = self.build_event_block(pending_event)
         if event_block:
             parts.append(event_block)
+        if game_directive.strip():
+            parts.append(game_directive.strip())
+        if date_directive.strip():
+            parts.append(date_directive.strip())
         return "\n\n".join(p for p in parts if p)

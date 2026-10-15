@@ -84,6 +84,13 @@ relation:
   proactive_penalty: 15           # -points si message envoyé sans réponse au précédent
   proactive_check_seconds: 300    # période de la boucle de vérification
   proactive_first_delay_seconds: 30
+  # Rendez-vous interactifs (« réalisateur invisible ») : le personnage
+  # propose une activité en texto (film synchronisé à froid… escapade à
+  # proche), le joueur répond naturellement, le serveur enchaîne les
+  # étapes. Aucune interface dédiée — 100 % conversation.
+  dates_enabled: true
+  date_cooldown_hours: 48.0       # délai min entre deux propositions
+  date_min_interactions: 3        # échanges minimum avant une proposition
 
 memory:
   enabled: true
@@ -97,6 +104,11 @@ image:
   enabled: true
   base_url: ""              # vide → env COMFYUI_BASE_URL → http://127.0.0.1:8188
   timeout_total: 300
+  # Workflows ComfyUI (format API exporté, dans server/image/workflows/).
+  # Par défaut : ceux versionnés. Chaque installation peut pointer vers ses
+  # propres fichiers locaux (ex. variantes avec LoRA, non versionnées) :
+  # workflow: "image_qwen_image_2_1_api_nsfw.json"
+  # workflow_edit: "image_qwen_image_2_1_image_edit_nsfw_api.json"
   # Initiative du personnage : photos envoyées de lui-même (stade Neutre+)
   initiative_enabled: true
   initiative_chance_turn: 0.10       # proba par tour de conversation

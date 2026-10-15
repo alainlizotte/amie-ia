@@ -179,7 +179,7 @@ export async function apiMonProfil(): Promise<MonProfil> {
 }
 
 export async function apiSauverMonProfil(
-  profil: MonProfil["profil"],
+  profil: MonProfil["profil"] & { notifications?: boolean; voix?: boolean },
 ): Promise<MonProfil> {
   const res = await fetch(`${API}/mon-profil`, {
     method: "PUT",

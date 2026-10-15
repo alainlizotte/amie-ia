@@ -35,6 +35,8 @@ Au WS, format des messages reçus :
     {"type": "join", "token": "nom|exp|sig"}   (token obtenu via /api/auth/*)
     {"type": "say", "text": "salut!"}
     {"type": "photo_request", "hint": "au café"}
+    {"type": "game_start", "game": "action_verite"}   (mini-jeux, voir
+                                                      server/relation/games.py)
 """
 
 from __future__ import annotations
@@ -64,6 +66,8 @@ from .image import helpers as img_helpers
 from .llm.client import LLMClient, Message
 from .llm.prompt_builder import PromptBuilder
 from .relation import presets as P
+from .relation import games as G
+from .relation import dates as D
 from .relation.memory import (
     EXTRACTION_PROMPT,
     Embedder,
@@ -124,7 +128,14 @@ async def lifespan(app: FastAPI):
 
     # Backend ComfyUI (images).
     app.state.image = (
-        img_helpers.get_backend(cfg.image.base_url, cfg.image.timeout_total)
+        img_helpers.get_backend(
+            cfg.image.base_url, cfg.image.timeout_total,
+            workflows={
+                "portrait": cfg.image.workflow,
+                "photo": cfg.image.workflow,
+                "photo_edit": cfg.image.workflow_edit,
+            },
+        )
         if cfg.image.enabled else None
     )
     if app.state.image is not None:
@@ -210,6 +221,40 @@ def _own_session(sid: str, user: str) -> dict[str, Any]:
     return profile
 
 
+def _profil_voix(character: dict[str, Any]) -> dict[str, Any]:
+    """Profil vocal du personnage — déterministe, dérivé du genre et de la
+    personnalité (mots-clés sur la fiche, même philosophie que le barème).
+
+    Le client (Web Speech API) choisit une voix système de la bonne langue/
+    genre et applique pitch/rate : chaque personnage sonne différemment,
+    sans backend TTS ni requête réseau.
+    """
+    genre = "femme" if (character.get("gender") or "F").upper() == "F" else "homme"
+    na = _sans_accents(str(character.get("personality") or "").lower())
+    rate, pitch = 1.0, 1.0
+    if any(m in na for m in (
+        "energique", "enthousiaste", "extravertie", "extraverti", "vive",
+        "vif", "explosive", "passionnee", "passionne", "solaire",
+    )):
+        rate = 1.1
+    if any(m in na for m in (
+        "calme", "posee", "pose", "reservee", "reserve", "reflechie",
+        "reflechi", "serene", "analytique", "minutieuse", "posée",
+    )):
+        rate = 0.9
+    if any(m in na for m in (
+        "drole", "drôle", "pince-sans-rire", "sarcastique", "moqueur",
+        "espiegle", "taquin", "malicieuse",
+    )):
+        pitch = 0.95
+    if any(m in na for m in (
+        "douce", "tendre", "sensible", "empathique", "bienveillante",
+        "chaleureuse", "maternelle", "protectrice",
+    )):
+        pitch = 1.05
+    return {"genre": genre, "pitch": pitch, "rate": rate}
+
+
 def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any]:
     """Vue « publique » du profil envoyée au GUI."""
     character = profile.get("character", {}) or {}
@@ -242,6 +287,16 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
         "events_consumed": len(profile.get("event_history", []) or []),
         "events_total": total_events,
         "date_creation": profile.get("meta", {}).get("date_creation", ""),
+        # Mini-jeu en cours — vue SANS secrets (ni mensonge, ni objet des 20
+        # questions) : sert uniquement à l'UI (barre de réponses rapides).
+        "game": G.jeu_public(profile.get("game")),
+        # Options d'expérience du compte (notifications OS, voix) + profil
+        # vocal du personnage (genre/pitch/rate → Web Speech API client).
+        "options": _options_utilisateur(
+            UP.charger_profil(_data_dir(),
+                              (profile.get("meta", {}) or {}).get("user", ""))
+        ),
+        "voix": _profil_voix(character),
     }
 
 
@@ -520,6 +575,25 @@ async def list_presets() -> dict[str, Any]:
     return {"characters": chars}
 
 
+@app.get("/api/presets/{preset_id}/portrait")
+async def preset_portrait(preset_id: str):
+    """Vignette de personnage prédéfini pour le sélecteur.
+
+    Sert le portrait EN CACHE partagé (généré à la première session du
+    personnage — voir `_preset_portrait_cache`). 404 tant qu'il n'existe
+    pas : le client masque alors l'image (aucune image n'est versionnée
+    dans le dépôt). Public comme /api/presets : le cache est partagé entre
+    tous les utilisateurs et ne contient aucune donnée personnelle.
+    """
+    chemin = _preset_portrait_cache(preset_id)
+    if chemin is None or not chemin.is_file():
+        raise HTTPException(status_code=404, detail="Portrait indisponible.")
+    return FileResponse(
+        chemin, media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 # --------------------------------------------------------------------------- #
 #  Mon profil — la fiche « dating app » de l'utilisateur (mêmes catégories
 #  que les personnages). Injectée dans le prompt : le personnage sait avec
@@ -534,6 +608,17 @@ def _profil_public_utilisateur(utilisateur: str) -> dict[str, Any]:
         "photo_description": profil.get("photo_description", ""),
         "photo_erreur": profil.get("photo_erreur", ""),
         "photo_url": "/api/mon-profil/photo" if a_photo else "",
+        # Options d'expérience (désactivables dans « Mon profil ») :
+        # notifications du système (OS) et voix des messages.
+        "options": _options_utilisateur(profil),
+    }
+
+
+def _options_utilisateur(profil: dict[str, Any]) -> dict[str, bool]:
+    """Options d'expérience — ABSENT = ACTIVÉ (comportement par défaut)."""
+    return {
+        "notifications": profil.get("notifications", True) is not False,
+        "voix": profil.get("voix", True) is not False,
     }
 
 
@@ -549,8 +634,15 @@ async def put_mon_profil(
     payload: dict[str, Any],
     utilisateur: str = Depends(utilisateur_courant),
 ) -> dict[str, Any]:
-    """Met à jour les champs de la fiche (liste blanche, autres ignorés)."""
-    champs = {k: v for k, v in (payload or {}).items() if k in UP.CHAMPS}
+    """Met à jour la fiche (liste blanche, autres ignorés).
+
+    Accepte aussi les options d'expérience : `notifications` et `voix`
+    (booléens — absent = activé).
+    """
+    autorises = set(UP.CHAMPS) | set(UP.OPTIONS) | {
+        "photo_description", "photo_erreur",
+    }
+    champs = {k: v for k, v in (payload or {}).items() if k in autorises}
     UP.sauver_profil(_data_dir(), utilisateur, champs)
     return _profil_public_utilisateur(utilisateur)
 
@@ -1149,6 +1241,53 @@ async def _handle_photo_request(hub: SessionHub, sid: str, hint: str) -> None:
                 "caption": caption,
             },
         })
+
+
+# --------------------------------------------------------------------------- #
+#  Mini-jeux — démarrage (bouton 🎲 du client). La RÉSOLUTION des tours se
+#  fait dans _handle_say (server/relation/games.py) : le LLM n'incarne que
+#  le personnage autour des contenus choisis par le serveur.
+# --------------------------------------------------------------------------- #
+async def _handle_game_start(hub: SessionHub, sid: str, gtype: str) -> None:
+    """Démarre un mini-jeu — décision 100 % côté serveur.
+
+    Sérialisée sur hub.turn_lock (écriture du profil + historique). Le
+    message d'ouverture est déterministe (aucun appel LLM) : fiable,
+    instantané et fidèle au ton du stade. Les tours suivants (devinettes,
+    choix action/vérité, questions oui/non) passent par le pipeline `say`
+    habituel, enrichi d'une directive de jeu.
+    """
+    st = _state(sid)
+    async with hub.turn_lock:
+        profile = st.load()
+        if "_erreur" in profile:
+            return
+        stage = profile.get("relationship_stage", "froid")
+        jeu, message = G.demarrer_jeu(gtype, profile, stage)
+        if jeu is None:
+            # Refus (stade trop bas, jeu inconnu, jeu déjà en cours…).
+            await hub.broadcast({
+                "type": "tool_event",
+                "event": {"type": "info", "msg": message or "Ce jeu est indisponible."},
+            })
+            return
+        hist = ChatHistory(sid)
+        hist.append("assistant", message or "")
+        st.save(profile)
+        # Carte « jeu de l'app » : la FICTION est que c'est l'application
+        # qui propose le jeu (comme un vrai icebreaker Bumble/Hinge) — le
+        # personnage y joue comme un humain, jamais comme un bot.
+        label = G.JEUX_DISPONIBLES.get(gtype, {}).get("label", gtype)
+        await hub.broadcast({
+            "type": "tool_event",
+            "event": {
+                "type": "info",
+                "msg": f"🎮 L'app lance « {label} » — {profile.get('character', {}).get('name', 'Ton match')} joue aussi !",
+            },
+        })
+        await hub.broadcast({"type": "dm", "text": message or ""})
+        await hub.broadcast({"type": "game", "state": G.jeu_public(jeu)})
+        _log.info("[%s] mini-jeu démarré : %s (stade %s)", sid, gtype, stage)
 
 
 # --------------------------------------------------------------------------- #
@@ -2259,6 +2398,118 @@ async def _maybe_initiative_photo(hub: SessionHub, sid: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  Photo souvenir d'un rendez-vous — le joueur À CÔTÉ du personnage.
+#
+#  Mode ÉDITION ComfyUI (image → image) : la photo de profil du joueur sert
+#  de canevas — son identité est préservée par le modèle d'édition — et le
+#  personnage, décrit par sa fiche, est ajouté à ses côtés dans la scène du
+#  rendez-vous (fragments visuels du « directeur photo » sur les derniers
+#  échanges). Replis en cascade : pas de photo joueur ou échec d'édition →
+#  photo SOLO du personnage dans la scène ; ComfyUI injoignable → silence.
+# --------------------------------------------------------------------------- #
+async def _generate_souvenir_photo(hub: SessionHub, sid: str) -> None:
+    image = getattr(app.state, "image", None)
+    st = _state(sid)
+    if image is None:
+        return
+    await _turn_begin()
+    try:
+        async with hub.turn_lock:
+            profile = st.load()
+            if "_erreur" in profile:
+                return
+            stage = profile.get("relationship_stage", "froid")
+            if stage not in ("neutre", "chaleureux", "proche"):
+                return  # photos refusées avant « neutre » — pas de souvenir
+            character = profile.get("character", {})
+            name = character.get("name", "")
+
+            await hub.broadcast({
+                "type": "tool_event",
+                "event": {
+                    "type": "image_pending",
+                    "msg": img_helpers.MSG_PENDING_SOUVENIR,
+                },
+            })
+            scene = await _scene_de_la_conversation(sid, character, stage, "")
+
+            user_key = (profile.get("meta", {}) or {}).get("user", "")
+            user_profil = (
+                UP.charger_profil(_data_dir(), user_key) if user_key else {}
+            )
+            photo_joueur = UP.photo_path(_data_dir(), user_key) if user_key else None
+
+            usage = "photo"
+            ref: Optional[str] = None
+            if photo_joueur is not None:
+                prompt = img_helpers.souvenir_edit_prompt(
+                    character, stage, scene,
+                    user_description=str(
+                        user_profil.get("photo_description")
+                        or user_profil.get("appearance")
+                        or ""
+                    ),
+                    user_gender=str(user_profil.get("gender") or ""),
+                    explicit=cfg.image.allow_explicit_from_proche,
+                )
+                usage = "photo_edit"
+                ref = str(photo_joueur)
+            else:
+                prompt = img_helpers.souvenir_solo_prompt(
+                    character, stage, scene,
+                    explicit=cfg.image.allow_explicit_from_proche,
+                )
+            _log.info(
+                "[photo][souvenir %s] usage=%s prompt : %s", sid, usage,
+                prompt[:200],
+            )
+            dest_dir = st.photos_dir
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            fname = f"souvenir_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            dest = dest_dir / fname
+
+            path_seed = await img_helpers.generer_image_edit(
+                image, prompt, ref, str(dest),
+            ) if usage == "photo_edit" else None
+            if path_seed is None and usage == "photo_edit":
+                # Édition impossible → repli photo solo de la scène.
+                _log.warning("[photo][souvenir %s] édition échouée — repli solo", sid)
+                prompt = img_helpers.souvenir_solo_prompt(
+                    character, stage, scene,
+                    explicit=cfg.image.allow_explicit_from_proche,
+                )
+                usage = "photo"
+            if path_seed is None:
+                path_seed = await img_helpers.generer_image(
+                    image, usage, prompt, str(dest),
+                )
+            if path_seed is None:
+                _log.warning("[photo][souvenir %s] génération échouée", sid)
+                return
+            _path, seed = path_seed
+
+            profile = st.load()
+            caption = f"Souvenir — {name} & vous"
+            st.add_photo(profile, fname, "photo", caption, prompt=prompt, seed=seed)
+            st.save(profile)
+            await hub.broadcast({
+                "type": "tool_event",
+                "event": {
+                    "type": "image_ready",
+                    "kind": "photo",
+                    "msg": "📸 Photo souvenir de votre rendez-vous !",
+                    "image": st.photo_url(fname),
+                    "caption": caption,
+                },
+            })
+            _log.info("[photo][souvenir %s] %s (%s, seed %s)", sid, fname, usage, seed)
+    finally:
+        last = await _turn_end()
+        if last:
+            await _maybe_unload_model()
+
+
+# --------------------------------------------------------------------------- #
 #  Tour de conversation — pipeline déterministe
 # --------------------------------------------------------------------------- #
 async def _extract_memories_if_due(
@@ -2319,6 +2570,7 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
     await _turn_begin()
     initiative_photo = False
+    date_photo_due = False
     try:
         async with hub.turn_lock:
             profile = st.load()
@@ -2354,6 +2606,27 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
             stage = compute_stage(int(profile["relationship_score"]))
 
+            # 3bis. Mini-jeu en cours ? Résolution DÉTERMINISTE du tour
+            #      (devinette, choix action/vérité, question 20q, abandon)
+            #      avant le prompt : le LLM reçoit la directive de jeu mais
+            #      ne décide ni des contenus ni de l'issue.
+            jeu_res: Optional[dict[str, Any]] = None
+            if stage == "rejet" and profile.get("game"):
+                # Le personnage refuse tout : le jeu s'éteint sans suite.
+                profile["game"] = None
+            else:
+                jeu_res = G.traiter_message_jeu(profile, text, stage)
+
+            # 3ter. Rendez-vous interactif en cours ? Même philosophie : la
+            #      réponse du joueur fait avancer les étapes de façon
+            #      déterministe (acceptation, refus, choix implicites), le
+            #      LLM n'incarne que la scène suivante.
+            date_res: Optional[dict[str, Any]] = None
+            if stage == "rejet" and profile.get("date"):
+                profile["date"] = None
+            elif profile.get("date"):
+                date_res = D.traiter_tour_date(profile, text)
+
             # 3. Scénario en attente (gates par stade déjà appliquées) — le
             #    corps est transformé UNE FOIS en souvenir/fantaisie (cache
             #    « souvenirs_scenes ») : les corps d'origine sont écrits
@@ -2361,8 +2634,13 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             #    lèvres »), incohérentes en app de rencontre. La narration
             #    porte donc sur un souvenir de SON côté ou une fantaisie
             #    (« je nous imaginais en train de… »), jamais une scène
-            #    vécue à deux.
-            pending = P.get_pending_event(profile, stage, cooldown_hours=rcfg.cooldown_hours)
+            #    vécue à deux. Un rendez-vous interactif en cours suspend
+            #    l'injection des scénarios (une chose à la fois — le
+            #    scénario reprendra après).
+            pending = (
+                None if profile.get("date")
+                else P.get_pending_event(profile, stage, cooldown_hours=rcfg.cooldown_hours)
+            )
             if pending:
                 profile["last_injected_event_id"] = pending.get("event_id")
                 try:
@@ -2374,6 +2652,33 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                 except Exception as e:  # noqa: BLE001
                     _log.warning(
                         "[%s] transformation du scénario ignorée : %s", sid, e,
+                    )
+
+            # 3quater. Déclenchement d'un rendez-vous interactif («
+            #      réalisateur invisible ») : ni jeu ni scénario en cours,
+            #      cooldown + stade + minimum d'interactions respectés. La
+            #      PROPOSITION est injectée pour ce tour : le personnage
+            #      invite naturellement en texto.
+            if (
+                not profile.get("date")
+                and not pending
+                and not profile.get("game")
+                and getattr(rcfg, "dates_enabled", True)
+                and stage != "rejet"
+            ):
+                scenario = D.date_dispo(profile, stage)
+                if scenario is not None:
+                    D.demarrer_date(scenario, profile)
+                    date_res = {
+                        "directive": D.directive_proposition(
+                            scenario, profile.get("character", {}) or {}, stage
+                        ),
+                        "points": 0, "mode": "remplace", "fin": False,
+                        "photo": None,
+                    }
+                    _log.info(
+                        "[%s] rendez-vous proposé : %s (stade %s)",
+                        sid, scenario["id"], stage,
                     )
 
             # 4. Souvenirs rappelés (recherche sémantique llamaembed).
@@ -2391,8 +2696,23 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             # 5. Prompt système complet + historique (+ fiche de l'utilisateur).
             user_key = (profile.get("meta", {}) or {}).get("user", "")
             user_profil = UP.charger_profil(_data_dir(), user_key) if user_key else {}
+            # Directive de jeu pour ce tour : résolution (issue + réaction
+            # demandée) si le tour vient de trancher, sinon règles du jeu en
+            # cours. Un scénario injecté a la priorité narrative sur la
+            # directive de jeu (le jeu reste actif, retenté au tour suivant).
+            game_directive = ""
+            if jeu_res and jeu_res.get("directive"):
+                game_directive = jeu_res["directive"]
+            elif profile.get("game") and not pending:
+                game_directive = G.directive_en_cours(
+                    profile["game"], profile.get("character", {}) or {}
+                )
+            date_directive = ""
+            if date_res and date_res.get("directive"):
+                date_directive = date_res["directive"]
             system_text = app.state.prompt_builder.build_system_message(
-                profile, memories, pending, user_profil=user_profil
+                profile, memories, pending, user_profil=user_profil,
+                game_directive=game_directive, date_directive=date_directive,
             )
             messages = [Message(role="system", content=system_text)] + list(hub_hist.history)
 
@@ -2463,12 +2783,28 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
                         hub_hist.append("assistant", scene_msg)
                         await hub.broadcast({"type": "dm", "text": scene_msg})
 
-            # 7. Auto-scoring déterministe (mots-clés + patterns).
+            # 7. Auto-scoring déterministe (mots-clés + patterns), complété
+            #    par les points du mini-jeu le cas échéant :
+            #    - « remplace » : le message n'est qu'un choix de jeu
+            #      (« 2 », « action »…) — le barème de conversation est
+            #      remplacé par les points du jeu ;
+            #    - « ajoute » : vrai message de conversation + bonus de jeu,
+            #      borné à [delta_min ; delta_max] comme le reste.
             delta = compute_delta(
                 text, narration, stage,
                 delta_max=rcfg.delta_max, delta_min=rcfg.delta_min,
                 gain_multiplier=rcfg.gain_multiplier,
             )
+            if jeu_res and jeu_res.get("points"):
+                pts = G.appliquer_multiplicateur(
+                    int(jeu_res["points"]), rcfg.gain_multiplier
+                )
+                if jeu_res.get("mode") == "remplace":
+                    delta = pts
+                else:
+                    delta = max(
+                        rcfg.delta_min, min(rcfg.delta_max, delta + pts)
+                    )
             old_stage = stage
             st.set_score(
                 profile,
@@ -2481,6 +2817,29 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             #      lui-même une photo pertinente (décision serveur, stade
             #      Neutre+). Génération différée après le tour de chat.
             initiative_photo = _initiative_photo_due(profile)
+
+            # 7ter. Rendez-vous : récompense, souvenir en mémoire, photo
+            #      souvenir à deux (génération différée après le tour).
+            date_photo_due = bool(date_res and date_res.get("photo"))
+            if date_res and date_res.get("points"):
+                pts = G.appliquer_multiplicateur(
+                    int(date_res["points"]), rcfg.gain_multiplier
+                )
+                delta = max(rcfg.delta_min, min(rcfg.delta_max, delta + pts))
+            if date_res and date_res.get("fin"):
+                dernier_rdv = (profile.get("dates_historique") or [None])[-1]
+                scen = next(
+                    (s for s in D.BANQUE_DATES if s["id"] == dernier_rdv), None
+                )
+                if scen is not None and app.state.memories is not None:
+                    try:
+                        await app.state.memories.add_facts(profile, [
+                            f"Notre {scen['titre']} — {scen.get('souvenir', 'rendez-vous')} : "
+                            "un très bon moment passé ensemble."
+                        ])
+                        _log.info("[%s] souvenir de rendez-vous rangé : %s", sid, scen["id"])
+                    except Exception as e:              # noqa: BLE001
+                        _log.warning("[%s] souvenir de rendez-vous non rangé : %s", sid, e)
 
             # 8. Consommation du scénario injecté — similarité cosinus entre
             #    le corps de l'event et la réponse (embeddings llamaembed),
@@ -2536,6 +2895,13 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
 
             st.save(profile)
 
+            # 8bis. État du mini-jeu (mis à jour ou terminé) → l'UI ajuste
+            #      sa barre de réponses rapides.
+            await hub.broadcast({
+                "type": "game",
+                "state": G.jeu_public(profile.get("game")),
+            })
+
             # 9. Extraction périodique de souvenirs (tous les N tours) —
             #    repersiste le profil si des faits ont été ajoutés, sinon ils
             #    seraient perdus au rechargement du tour suivant.
@@ -2567,7 +2933,13 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
     await hub.broadcast({"type": "typing", "on": False})
     await hub.broadcast({"type": "status", "description": "", "done": True})
 
-    # 11. Photo d'initiative (décidée pendant le tour) — après la réponse,
+    # 11. Photo souvenir du rendez-vous (beat photo) — après la réponse,
+    #     comme l'initiative photo (ne retarde pas la bulle de chat).
+    if date_photo_due:
+        await _generate_souvenir_photo(hub, sid)
+        return
+
+    # 11bis. Photo d'initiative (décidée pendant le tour) — après la réponse,
     #     pour ne pas retarder la bulle de chat.
     if initiative_photo:
         await _maybe_initiative_photo(hub, sid)
@@ -2666,6 +3038,16 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
                     })
                     continue
                 await _handle_photo_request(hub, sid, msg.get("hint", ""))
+                continue
+
+            if mtype == "game_start":
+                if cfg.llm.block_user_messages_during_turn and hub.busy:
+                    await ws.send_json({
+                        "type": "sys", "event": "busy",
+                        "detail": "L'IA est en train de travailler… réessaie dans un instant.",
+                    })
+                    continue
+                await _handle_game_start(hub, sid, str(msg.get("game", "")))
                 continue
 
             await ws.send_json({"type": "sys", "event": "error",

@@ -5,6 +5,7 @@ import { ChatSocket } from "../api/ws";
 import { STAGE_LABELS, STAGE_ORDER } from "../api/types";
 import { uid, useAmie } from "../store";
 import { playMessageSound } from "../utils/sound";
+import { parler } from "../utils/voix";
 
 export function useChatSocket(sid: string | undefined) {
   const socketRef = useRef<ChatSocket | null>(null);
@@ -28,6 +29,7 @@ export function useChatSocket(sid: string | undefined) {
       setTyping,
       setBusy,
       setStatus,
+      setGame,
     } = store.getState();
 
     socket.on((msg) => {
@@ -37,6 +39,8 @@ export function useChatSocket(sid: string | undefined) {
             setJoined(true);
             setAuthError(null);
             setProfile(msg.profile);
+            // Restaure l'état du mini-jeu (reconnexion / changement de page).
+            setGame(msg.profile.game ?? null);
             // La reconnexion a pu rater le `typing off` / `status done` de
             // fin de tour : l'historique fraîchement rechargé inclut la
             // dernière réponse, les indicateurs de réflexion doivent être
@@ -63,6 +67,11 @@ export function useChatSocket(sid: string | undefined) {
 
         case "player":
           addMessage({ id: uid(), role: "user", content: msg.text });
+          break;
+
+        case "game":
+          // Barre de réponses rapides du mini-jeu (ou masquage si fini).
+          setGame(msg.state);
           break;
 
         case "typing":
@@ -99,6 +108,33 @@ export function useChatSocket(sid: string | undefined) {
           if (streaming) endStream(streaming.id, msg.text);
           else addMessage({ id: uid(), role: "assistant", content: msg.text });
           playMessageSound();
+          // Notification OS (option du profil) — uniquement quand l'onglet
+          // est en arrière-plan (sinon redondant avec le fil à l'écran).
+          const stMaintenant = useAmie.getState();
+          const notifs = stMaintenant.profile?.options?.notifications ?? true;
+          if (
+            notifs &&
+            document.hidden &&
+            "Notification" in window &&
+            Notification.permission === "granted"
+          ) {
+            try {
+              new Notification(
+                stMaintenant.profile?.character.name || "Ami(e) IA",
+                {
+                  body: msg.text.slice(0, 140),
+                  icon: stMaintenant.profile?.portrait_url ?? undefined,
+                  tag: `amie-${stMaintenant.profile?.session_id ?? "dm"}`,
+                },
+              );
+            } catch {
+              /* notification indisponible */
+            }
+          }
+          // Lecture vocale automatique (option du profil, Web Speech API).
+          if ((stMaintenant.profile?.options?.voix ?? true)) {
+            parler(msg.text, stMaintenant.profile?.voix);
+          }
           // Sécurité : la réponse finale clôt toujours le tour, même si un
           // `typing off` / `status done` a été perdu en route.
           setTyping(false);

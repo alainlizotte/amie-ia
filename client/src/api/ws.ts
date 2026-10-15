@@ -133,6 +133,11 @@ export class ChatSocket {
     this.send({ type: "photo_request", hint });
   }
 
+  /** Lance un mini-jeu (server/relation/games.py) côté serveur. */
+  gameStart(game: string): void {
+    this.send({ type: "game_start", game });
+  }
+
   close(): void {
     this.manualClose = true;
     this.ws?.close();

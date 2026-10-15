@@ -34,3 +34,9 @@ server/data/*
 # sous licence permissive (Qwen-Image 1.0 / FLUX.1-schnell) — voir
 # THIRD_PARTY_NOTICES.md.
 server/data/preset_portraits/
+
+# Workflows ComfyUI locaux (variantes perso, ex. NSFW avec LoRA) — chaque
+# installation garde ses graphes locaux ; les workflows de référence
+# (versionnés) restent dans server/image/workflows/.
+server/image/workflows/*_nsfw*.json
+server/image/workflows/*nsfw*.json

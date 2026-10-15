@@ -16,6 +16,7 @@ import {
 } from "../api/rest";
 import type { MonProfil } from "../api/types";
 import { useAmie } from "../store";
+import { arreterVoix, parler, voixDisponible } from "../utils/voix";
 
 type Champs = MonProfil["profil"];
 
@@ -76,6 +77,7 @@ export function MonProfilPage() {
   const setUser = useAmie((s) => s.setUser);
   const reset = useAmie((s) => s.reset);
   const [form, setForm] = useState<Champs>(VIDE);
+  const [options, setOptions] = useState({ notifications: true, voix: true });
   const [erreur, setErreur] = useState("");
   const [analyseEnCours, setAnalyseEnCours] = useState(false);
   const [confirmerSuppression, setConfirmerSuppression] = useState(false);
@@ -91,6 +93,7 @@ export function MonProfilPage() {
   useEffect(() => {
     if (data) {
       setForm({ ...VIDE, ...data.profil });
+      if (data.options) setOptions(data.options);
       if (analyseEnCours && (data.photo_description || data.photo_erreur)) {
         setAnalyseEnCours(false);
       }
@@ -104,7 +107,7 @@ export function MonProfilPage() {
   });
 
   const sauver = useMutation({
-    mutationFn: () => apiSauverMonProfil(form),
+    mutationFn: () => apiSauverMonProfil({ ...form, ...options }),
     onSuccess: () => {
       // Profil enregistré → retour automatique à la page principale.
       queryClient.invalidateQueries({ queryKey: ["mon-profil"] });
@@ -153,6 +156,24 @@ export function MonProfilPage() {
     reader.onload = () => upload.mutate(String(reader.result));
     reader.readAsDataURL(f);
     e.target.value = "";
+  }
+
+  /** Options d'expérience : à l'activation, demandes de permission / test. */
+  function basculerOption(cle: "notifications" | "voix") {
+    const valeur = !options[cle];
+    setOptions({ ...options, [cle]: valeur });
+    if (cle === "notifications" && valeur && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission().catch(() => undefined);
+      }
+    }
+    if (cle === "voix") {
+      if (valeur && voixDisponible()) {
+        parler("Salut ! C'est ma voix pour tous nos messages 💬");
+      } else {
+        arreterVoix();
+      }
+    }
   }
 
   if (isLoading) {
@@ -250,6 +271,38 @@ export function MonProfilPage() {
         {champ("Ton histoire", "histoire", form, setForm, true, "D'où tu viens, ce qui t'a façonné…")}
         {champ("Situation amoureuse", "parcours_amoureux", form, setForm, true, "ex : célibataire depuis un an…")}
         {champ("Ce que tu recherches", "preferences", form, setForm, true, "ex : discussions sincères, rire…")}
+      </div>
+
+      {/* Options d'expérience — désactivables */}
+      <div className="mt-4 space-y-3 rounded-2xl border border-rose-900/40 bg-[#24101c]/80 p-5">
+        <h3 className="text-sm font-semibold text-rose-200/80">Expérience</h3>
+        <label className="flex cursor-pointer items-start gap-3 text-sm text-rose-200/70">
+          <input
+            type="checkbox"
+            checked={options.notifications}
+            onChange={() => basculerOption("notifications")}
+            className="mt-0.5 h-4 w-4 accent-rose-500"
+          />
+          <span>
+            <span className="font-medium text-rose-100">🔔 Notifications</span>{" "}
+            — être alerté par le système quand ton match écrit pendant que
+            l'application est en arrière-plan.
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-3 text-sm text-rose-200/70">
+          <input
+            type="checkbox"
+            checked={options.voix}
+            onChange={() => basculerOption("voix")}
+            className="mt-0.5 h-4 w-4 accent-rose-500"
+          />
+          <span>
+            <span className="font-medium text-rose-100">🔊 Voix des messages</span>{" "}
+            — tes matchs « parlent » : lecture automatique de leurs messages
+            avec une voix adaptée à leur genre et leur personnalité (bouton 🔊
+            sur chaque message pour réécouter). {voixDisponible() ? "" : "(Voix non disponible dans ce navigateur)"}
+          </span>
+        </label>
       </div>
 
       {erreur && (

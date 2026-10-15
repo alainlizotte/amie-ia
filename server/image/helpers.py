@@ -46,10 +46,21 @@ REFUSALS_BY_STAGE = {
 STAGE_EXPLICITE = "proche"
 
 
-def get_backend(base_url: str = "", timeout_total: int = 300) -> Optional[ComfyUIBackend]:
-    """Renvoie un backend ComfyUI prêt à l'emploi, ou None si désactivé."""
+def get_backend(
+    base_url: str = "",
+    timeout_total: int = 300,
+    workflows: Optional[dict[str, str]] = None,
+) -> Optional[ComfyUIBackend]:
+    """Renvoie un backend ComfyUI prêt à l'emploi, ou None si désactivé.
+
+    `workflows` : table usage → fichier de workflow (config image.workflow /
+    image.workflow_edit — chaque installation peut pointer ses variantes
+    locales, ex. NSFW avec LoRA).
+    """
     try:
-        return ComfyUIBackend(base_url=base_url, timeout_total=timeout_total)
+        return ComfyUIBackend(
+            base_url=base_url, timeout_total=timeout_total, workflows=workflows,
+        )
     except Exception:
         return None
 
@@ -374,6 +385,30 @@ async def generer_image(
     return None
 
 
+async def generer_image_edit(
+    backend: ComfyUIBackend,
+    prompt: str,
+    ref_path: Optional[str],
+    dest_path: str,
+) -> Optional[tuple[str, int]]:
+    """Édition d'une image de référence (usage « photo_edit ») — photo
+    souvenir d'un rendez-vous. `ref_path` None ou échec → None (l'appelant
+    retombe sur la génération solo)."""
+    if not ref_path:
+        return None
+    try:
+        path, seed = await backend.generer(
+            "photo_edit", prompt, dest_path, ref_path=ref_path,
+        )
+        if os.path.isfile(path):
+            return path, seed
+    except ComfyUIError as e:
+        _log.warning("[image] échec édition souvenir : %s", e)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("[image] erreur inattendue en édition : %r", e)
+    return None
+
+
 def caption_for(kind: str, stage: str, character_name: str) -> str:
     """Légende FR affichée sous la photo dans l'album."""
     labels = {
@@ -381,3 +416,83 @@ def caption_for(kind: str, stage: str, character_name: str) -> str:
         "photo": f"Photo partagée ({stage})",
     }
     return labels.get(kind, "Photo")
+
+
+# --------------------------------------------------------------------------- #
+#  Photo souvenir d'un rendez-vous — le joueur à côté du personnage.
+#
+#  Mode ÉDITION (image → image) : la photo de profil du JOUEUR sert de
+#  canevas (identité préservée par le modèle d'édition) et le personnage —
+#  décrit par sa fiche — est ajouté à ses côtés dans la scène du rendez-vous.
+#  Les garde-fous de tenue par stade restent imposés (outfit_clause +
+#  sanitize), comme pour toute photo.
+# --------------------------------------------------------------------------- #
+def _genre_joueur(genre: str) -> str:
+    """« F » → femme, « H »/« M » → homme (le profil joueur accepte H ou M)."""
+    return "femme" if (genre or "").upper().startswith("F") else "homme"
+
+
+def souvenir_edit_prompt(
+    character: dict[str, Any],
+    stage: str,
+    scene: str,
+    user_description: str = "",
+    user_gender: str = "",
+    explicit: bool = True,
+) -> str:
+    """Instruction d'ÉDITION : ajouter le personnage à côté du joueur.
+
+    `scene` : fragments visuels du rendez-vous (directeur photo, déjà
+    sanitizés). `user_description` : description de l'apparence du joueur
+    (analyse vision de sa photo de profil) — renforce la cohérence,
+    l'identité étant déjà ancrée par l'image de référence.
+    """
+    scene_clean = sanitize_scene(scene, stage, explicit)
+    desc_user = " ".join(str(user_description or "").split())[:220]
+    name = character.get("name") or "the character"
+    genre_perso = "woman" if (character.get("gender") or "F").upper() == "F" else "man"
+    desc_perso = _base_description(character)
+    genre_j = _genre_joueur(user_gender)
+
+    fragments = [
+        f"photograph of the same {genre_j} from the input photo, "
+        "keep identity exactly unchanged",
+    ]
+    if desc_user:
+        fragments.append(f"({desc_user})")
+    fragments.append(
+        f"now together with {name}, a {genre_perso} matching this "
+        f"description: {desc_perso}"
+    )
+    if scene_clean:
+        fragments.append(scene_clean)
+    fragments.append(
+        "side by side, close together, smiling naturally at each other, "
+        "candid couple photo taken by a passerby, half-body framing, "
+        "warm natural lighting"
+    )
+    fragments.append(outfit_clause(stage, explicit))
+    fragments.append("photorealistic, high resolution, no text")
+    return ", ".join(f for f in fragments if f)
+
+
+def souvenir_solo_prompt(
+    character: dict[str, Any],
+    stage: str,
+    scene: str,
+    explicit: bool = True,
+) -> str:
+    """Prompt de repli (pas de photo joueur / échec d'édition) : photo SOLO
+    du personnage dans la scène du rendez-vous — cadrage pris par un tiers."""
+    scene_clean = sanitize_scene(scene, stage, explicit)
+    desc = _base_description(character)
+    return (
+        f"photograph of {desc}"
+        + (f", {scene_clean}" if scene_clean else "")
+        + ", candid photo taken by a passerby, half-body framing, "
+        f"{outfit_clause(stage, explicit)}, photorealistic, natural lighting, "
+        "warm colors, high resolution, no text"
+    )
+
+
+MSG_PENDING_SOUVENIR = "📸 Photo souvenir du rendez-vous en cours de création…"

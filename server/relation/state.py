@@ -54,6 +54,17 @@ SCHEMA_SESSION: dict[str, Any] = {
     # envoyé). Plus aucun message spontané tant que l'utilisateur n'a pas
     # répondu — une personne réelle ne martèle pas de relances.
     "proactive_closed": False,
+    # Mini-jeu en cours (server/relation/games.py) — None si aucun.
+    "game": None,
+    # Historique des contenus de jeux déjà utilisés (anti-répétition, FIFO).
+    "games_historique": [],
+    # Rendez-vous interactif en cours (server/relation/dates.py) — None si
+    # aucun. Le réalisateur invisible : propositions, beats, conclusion.
+    "date": None,
+    # Historique des scénarios de rendez-vous déjà vécus (anti-répétition).
+    "dates_historique": [],
+    # Dernier rendez-vous terminé (ISO UTC) — cooldown de proposition.
+    "last_date_at": None,
 }
 
 

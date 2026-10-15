@@ -3,7 +3,7 @@
 // tool_event images, mises à jour de score).
 
 import { create } from "zustand";
-import type { ChatMessage, PublicProfile } from "./api/types";
+import type { ChatMessage, GameInfo, PublicProfile } from "./api/types";
 
 const USER_KEY = "amie.user";
 const TOKEN_KEY = "amie.token";
@@ -44,6 +44,10 @@ interface AmieStore {
   profile: PublicProfile | null;
   setProfile: (p: PublicProfile) => void;
   patchProfile: (patch: Partial<PublicProfile>) => void;
+
+  // -- Mini-jeu en cours (état « public » sans secrets) --------------------- //
+  game: GameInfo | null;
+  setGame: (g: GameInfo | null) => void;
 
   // -- Fil de discussion --------------------------------------------------- //
   messages: ChatMessage[];
@@ -101,6 +105,9 @@ export const useAmie = create<AmieStore>((set) => ({
   patchProfile: (patch) =>
     set((st) => (st.profile ? { profile: { ...st.profile, ...patch } } : st)),
 
+  game: null,
+  setGame: (g) => set({ game: g }),
+
   messages: [],
   typing: false,
   busy: false,
@@ -143,6 +150,7 @@ export const useAmie = create<AmieStore>((set) => ({
       joined: false,
       authError: null,
       profile: null,
+      game: null,
       messages: [],
       typing: false,
       busy: false,

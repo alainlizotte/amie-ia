@@ -28,6 +28,7 @@ export function SessionPage() {
   const status = useAmie((s) => s.status);
   const joined = useAmie((s) => s.joined);
   const authError = useAmie((s) => s.authError);
+  const game = useAmie((s) => s.game);
 
   if (authError) {
     return (
@@ -50,6 +51,9 @@ export function SessionPage() {
   }
 
   const canPhoto = PHOTO_STAGES.has(profile.stage);
+  // Mini-jeux bloqués au stade « rejet » (le personnage ne répond plus) ;
+  // les gates plus fines (réservé pour action/vérité…) sont côté serveur.
+  const canJeux = profile.stage !== "rejet";
 
   // Contenu du panneau latéral — partagé entre la colonne de droite
   // (desktop) et la vue superposée ouverte par le bouton ⓘ (mobile).
@@ -142,6 +146,9 @@ export function SessionPage() {
           status={status}
           characterName={profile.character.name}
           canRequestPhoto={canPhoto}
+          game={canJeux ? game : null}
+          voix={profile.voix}
+          voixActive={profile.options?.voix ?? true}
           onSend={(text) => {
             useAmie.getState().setBusy(true);
             socketRef.current?.say(text);
@@ -154,6 +161,7 @@ export function SessionPage() {
             );
             socketRef.current?.photoRequest(hint);
           }}
+          onGameStart={(g) => socketRef.current?.gameStart(g)}
         />
       </div>
 

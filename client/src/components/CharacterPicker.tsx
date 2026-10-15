@@ -1,4 +1,5 @@
-// Sélecteur de personnage — grille des presets + formulaire personnalisé.
+// Sélecteur de personnage — grille des presets (avec vignette portrait,
+// servie depuis le cache partagé du serveur) + formulaire personnalisé.
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -97,12 +98,28 @@ function PresetCard({
   disabled: boolean;
   onClick: () => void;
 }) {
+  // Vignette : portrait du cache partagé (généré à la première session du
+  // personnage). Tant qu'il n'existe pas (404), on masque l'image — la
+  // carte reste utilisable et le portrait apparaîtra au rechargement.
+  const [vignette, setVignette] = useState(
+    `/api/presets/${encodeURIComponent(c.id)}/portrait`,
+  );
+
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className="group rounded-xl border border-rose-900/40 bg-[#1a0b14] p-4 text-left transition hover:border-rose-500/60 hover:bg-[#331627]/60 disabled:opacity-40"
     >
+      {vignette && (
+        <img
+          src={vignette}
+          alt={`Portrait de ${c.name}`}
+          loading="lazy"
+          onError={() => setVignette("")}
+          className="mb-3 h-36 w-full rounded-lg object-cover object-top"
+        />
+      )}
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-semibold text-rose-100">{c.name}</span>
         <span className="text-xs text-rose-200/50">

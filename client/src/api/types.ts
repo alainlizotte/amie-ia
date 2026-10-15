@@ -28,6 +28,27 @@ export interface PublicProfile {
   events_consumed: number;
   events_total: number;
   date_creation: string;
+  /** Mini-jeu en cours (vue sans secrets) — null si aucun. */
+  game?: GameInfo | null;
+  /** Options d'expérience du compte (absent = activé). */
+  options?: { notifications: boolean; voix: boolean };
+  /** Profil vocal du personnage (genre, pitch, rate — Web Speech API). */
+  voix?: ProfilVoix;
+}
+
+/** Profil vocal — voir server/main.py `_profil_voix` (miroir). */
+export interface ProfilVoix {
+  genre: string;
+  pitch: number;
+  rate: number;
+}
+
+/** Mini-jeu en cours — état « public » envoyé par le serveur (sans secrets). */
+export interface GameInfo {
+  type: string;
+  label: string;
+  /** Réponses rapides cliquables (« 1 », « Action »…) envoyées via say. */
+  chips: string[];
 }
 
 export interface SessionSummary extends PublicProfile {
@@ -63,6 +84,8 @@ export interface MonProfil {
   photo_erreur: string;
   /** URL authentifiée de la photo ("" si aucune) — à charger via blob. */
   photo_url: string;
+  /** Options d'expérience (notifications OS, voix — absent = activé). */
+  options?: { notifications: boolean; voix: boolean };
 }
 
 export interface PhotoEntry {
@@ -97,7 +120,8 @@ export type ToolEvent =
 export type WsOutMessage =
   | { type: "join"; token: string }
   | { type: "say"; text: string }
-  | { type: "photo_request"; hint?: string };
+  | { type: "photo_request"; hint?: string }
+  | { type: "game_start"; game: string };
 
 /** Messages entrants (serveur → client). */
 export type WsInMessage =
@@ -109,6 +133,7 @@ export type WsInMessage =
   | { type: "delta"; text: string }
   | { type: "dm"; text: string }
   | { type: "tool_event"; event: ToolEvent }
+  | { type: "game"; state: GameInfo | null }
   | {
       type: "profile";
       score: number;

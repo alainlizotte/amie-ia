@@ -40,6 +40,10 @@ CHAMPS: tuple[str, ...] = (
     "preferences",        # ce que la personne recherche
 )
 
+# Options d'expérience (désactivables dans « Mon profil ») — persistées avec
+# la fiche, mais hors catégories « dating app ». Absentes = ACTIVÉES.
+OPTIONS: tuple[str, ...] = ("notifications", "voix")
+
 # Champs techniques (non éditables directement par l'utilisateur).
 _CHAMPS_TECH = ("photo", "photo_description", "photo_erreur", "date_modification")
 
@@ -91,7 +95,9 @@ def sauver_profil(data_dir: str | os.PathLike, nom: str, champs: dict[str, Any])
     (`photo_description`, `photo_erreur` — écrits par l'analyse vision).
     `date_modification` est toujours mis à jour automatiquement.
     """
-    autorises = set(CHAMPS) | {"photo_description", "photo_erreur"}
+    autorises = set(CHAMPS) | set(OPTIONS) | {
+        "photo_description", "photo_erreur",
+    }
     profils = _charger_tous(data_dir)
     cle = cle_utilisateur(nom)
     profil = profils.get(cle, {})
