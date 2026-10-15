@@ -55,31 +55,41 @@ class TestDisponibilite:
         assert D.date_dispo(profil, "neutre") is not None
 
     def test_gate_par_stade(self):
-        """À froid : activités à distance uniquement ; jamais de scène
-        physique avant « neutre » (crédibilité des stades)."""
+        """Aucun rendez-vous avant « neutre » ; à froid/réservé : None."""
+        assert D.date_dispo(_profil(stage="froid"), "froid") is None
+        assert D.date_dispo(_profil(stage="reserve"), "reserve") is None
+        # À neutre : scénarios neutre-gated uniquement (aucun moment physique
+        # anticipé — les sorties réelles attendent leur stade).
         for _ in range(30):
-            scen = D.date_dispo(_profil(stage="froid"), "froid")
+            scen = D.date_dispo(_profil(stage="neutre"), "neutre")
             assert scen is not None
-            assert scen["min_stage"] == "froid"
-            assert scen.get("photo") is None  # photos refusées avant neutre
-        # À réservé : les scénarios froid restent éligibles + réservé.
-        for _ in range(30):
-            scen = D.date_dispo(_profil(stage="reserve"), "reserve")
-            assert scen["min_stage"] in ("froid", "reserve")
-        # À proche : tout est éligible.
+            assert scen["min_stage"] == "neutre"
+        # À proche : tout est éligible, avec variété réelle.
         ids = {D.date_dispo(_profil(stage="proche"), "proche")["id"]
                for _ in range(60)}
-        assert len(ids) >= 3  # variété réelle à haut stade
+        assert len(ids) >= 3
+
+    def test_modes_scenes(self):
+        """Scénarios à distance vs présentiel explicites (crédibilité)."""
+        distance = {"film_sync", "playlist", "cuisine_sync", "balade_commentee"}
+        for scen in D.BANQUE_DATES:
+            if scen["id"] in distance:
+                assert scen["mode"] == "distance"
+                assert scen.get("photo") is None  # pas de photo à distance
+            else:
+                assert scen["mode"] == "presentiel"
 
     def test_stades_couverts(self):
-        """Un scénario est disponible à CHAQUE stade (froid → proche)."""
+        """Un scénario est disponible à CHAQUE stade jouable (neutre → proche)
+        et AUCUN avant « neutre »."""
         for st in STAGE_ORDER:
-            if st == "rejet":
-                continue
             profil = _profil(stage=st)
             profil["last_date_at"] = None
             scen = D.date_dispo(profil, st)
-            assert scen is not None, f"aucun scénario au stade {st}"
+            if st in ("rejet", "froid", "reserve"):
+                assert scen is None, f"aucun rendez-vous ne devrait exister à {st}"
+            else:
+                assert scen is not None, f"aucun scénario au stade {st}"
 
     def test_pas_de_proposition_si_date_en_cours(self):
         profil = _profil()
@@ -190,17 +200,17 @@ class TestBeatsEtMoments:
                     assert moment.get("options") and moment.get("scenes")
                     assert "_defaut" in moment["scenes"]
 
-    def test_dates_froid_sans_photo(self):
-        """Activités à distance : aucune photo avant « neutre »."""
+    def test_dates_distance_sans_photo(self):
+        """Activités à distance : aucune photo (et aucun beat photo)."""
         for scen in D.BANQUE_DATES:
-            if scen["min_stage"] in ("froid", "reserve"):
+            if scen.get("mode") == "distance":
                 assert scen.get("photo") is None
                 for beat in scen.get("beats", []):
                     assert beat.get("photo") is None
 
-    def test_dates_neutre_ont_photo_souvenir(self):
+    def test_dates_presentiel_ont_photo_souvenir(self):
         for scen in D.BANQUE_DATES:
-            if scen["min_stage"] in ("neutre", "chaleureux", "proche"):
+            if scen.get("mode") == "presentiel":
                 assert scen.get("photo") == "deux"
 
 
@@ -215,8 +225,11 @@ class TestDirectivesSansFuite:
         assert "SCÈNE À VIVRE" in res["directive"]
         assert "ne mentionne jamais" in res["directive"].lower()
 
-    def test_instruction_distance_aux_stades_bas(self):
-        profil = _profil(stage="froid")
+    def test_instruction_distance_meme_au_neutre(self):
+        """Un scénario à distance reste jouable au neutre SANS jamais
+        décrire une rencontre physique."""
+        profil = _profil(stage="neutre")
         _force_date(profil, "film_sync")
         res = D.traiter_tour_date(profil, "bonne idée, ça me va !")
-        assert "PAS encore rencontrés" in res["directive"]
+        assert "À DISTANCE" in res["directive"]
+        assert "JAMAIS une rencontre physique" in res["directive"]

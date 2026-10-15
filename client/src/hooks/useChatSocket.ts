@@ -131,8 +131,13 @@ export function useChatSocket(sid: string | undefined) {
               /* notification indisponible */
             }
           }
-          // Lecture vocale automatique (option du profil, Web Speech API).
-          if ((stMaintenant.profile?.options?.voix ?? true)) {
+          // Lecture vocale automatique (option du profil, Web Speech API)
+          // — seulement à partir du stade « Chaleureux » (voix exposée par
+          // le serveur à ce stade uniquement).
+          if (
+            (stMaintenant.profile?.options?.voix ?? true) &&
+            stMaintenant.profile?.voix
+          ) {
             parler(msg.text, stMaintenant.profile?.voix);
           }
           // Sécurité : la réponse finale clôt toujours le tour, même si un

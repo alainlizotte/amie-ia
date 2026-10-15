@@ -39,6 +39,34 @@ class TestOptionsExperience:
         assert opts["notifications"] is True and opts["voix"] is True
 
 
+class TestGatingVoixParStade:
+    """La voix n'est disponible qu'à partir du stade « chaleureux »."""
+
+    def _profil_session(self, stage: str) -> dict:
+        return {
+            "meta": {"user": "VoixTest", "session_id": "abc123", "titre": "T"},
+            "character": {
+                "name": "Camille", "age": "27", "gender": "F",
+                "personality": "Enthousiaste et solaire",
+            },
+            "relationship_score": 900,
+            "relationship_stage": stage,
+        }
+
+    def test_voix_exposee_seulement_chaleureux_et_proche(self):
+        from server.main import _public_profile
+        from server.relation.state import RelationState
+
+        st = RelationState(_DATA, "gatev")
+        for stade in ("rejet", "froid", "reserve", "neutre"):
+            pub = _public_profile(st, self._profil_session(stade))
+            assert pub["voix"] is None, f"voix ne devrait pas exister à {stade}"
+        for stade in ("chaleureux", "proche"):
+            pub = _public_profile(st, self._profil_session(stade))
+            assert pub["voix"] is not None, f"voix devrait exister à {stade}"
+            assert pub["voix"]["genre"] == "femme"
+
+
 class TestProfilVoix:
     def test_deterministe_par_genre(self):
         femme = _profil_voix({"gender": "F", "personality": ""})

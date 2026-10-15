@@ -9,7 +9,7 @@ from server.relation import games as G  # noqa: E402
 from server.relation.stages import STAGE_ORDER  # noqa: E402
 
 
-def _profil(character=None, stage="froid", score=500):
+def _profil(character=None, stage="neutre", score=500):
     """Profil de session minimal pour le moteur de jeux."""
     return {
         "meta": {"user": "test", "session_id": "abc123", "titre": "Test"},
@@ -37,39 +37,51 @@ class TestGatesDeStade:
             assert jeu is None
             assert message and "Rejet" in message
 
-    def test_deux_verites_des_froid(self):
+    def test_deux_verites_du_neutre(self):
+        # Rien avant « neutre » : à froid, on discute simplement.
         jeu, message = G.demarrer_jeu(
             G.TYPE_DEUX_VERITES, _profil(PERSONNAGE_RICHE, "froid"), "froid"
         )
-        assert jeu is not None and message
+        assert jeu is None and "Neutre" in message
+        jeu, _ = G.demarrer_jeu(
+            G.TYPE_DEUX_VERITES, _profil(PERSONNAGE_RICHE, "neutre"), "neutre"
+        )
+        assert jeu is not None
 
-    def test_vingt_questions_des_froid(self):
+    def test_vingt_questions_du_neutre(self):
         jeu, message = G.demarrer_jeu(
             G.TYPE_VINGT_QUESTIONS, _profil(PERSONNAGE_RICHE, "froid"), "froid"
         )
-        assert jeu is not None and message
+        assert jeu is None and "Neutre" in message
+        jeu, _ = G.demarrer_jeu(
+            G.TYPE_VINGT_QUESTIONS, _profil(PERSONNAGE_RICHE, "neutre"), "neutre"
+        )
+        assert jeu is not None
 
-    def test_action_verite_reserve_minimum(self):
+    def test_action_verite_du_neutre(self):
         jeu, message = G.demarrer_jeu(
             G.TYPE_ACTION_VERITE, _profil(stage="froid"), "froid"
         )
-        assert jeu is None and "Réservé" in message
+        assert jeu is None and "Neutre" in message
         jeu, message = G.demarrer_jeu(
             G.TYPE_ACTION_VERITE, _profil(stage="reserve"), "reserve"
         )
-        assert jeu is not None and message
+        assert jeu is None and "Neutre" in message
+        jeu, _ = G.demarrer_jeu(
+            G.TYPE_ACTION_VERITE, _profil(stage="neutre"), "neutre"
+        )
+        assert jeu is not None
 
     def test_gates_cohérentes_sur_tous_les_stades(self):
         for gtype, info in G.JEUX_DISPONIBLES.items():
             for st in STAGE_ORDER:
                 profil = _profil(PERSONNAGE_RICHE, st)
                 jeu, message = G.demarrer_jeu(gtype, profil, st)
-                if st == "rejet" or (
-                    info["min_stage"] != "froid"
-                    and STAGE_ORDER.index(st) < STAGE_ORDER.index(info["min_stage"])
+                if st == "rejet" or STAGE_ORDER.index(st) < STAGE_ORDER.index(
+                    info["min_stage"]
                 ):
                     assert jeu is None, f"{gtype} ne devrait pas démarrer à {st}"
-                elif st != "rejet" and info["min_stage"] == "froid":
+                else:
                     # 2V1M requiert de la matière : le personnage riche en a.
                     assert jeu is not None, f"{gtype} devrait démarrer à {st}"
 
@@ -78,18 +90,18 @@ class TestGatesDeStade:
         assert jeu is None and "inconnu" in message.lower()
 
     def test_jeu_deja_en_cours(self):
-        profil = _profil(PERSONNAGE_RICHE, "froid")
-        jeu, _ = G.demarrer_jeu(G.TYPE_VINGT_QUESTIONS, profil, "froid")
+        profil = _profil(PERSONNAGE_RICHE, "neutre")
+        jeu, _ = G.demarrer_jeu(G.TYPE_VINGT_QUESTIONS, profil, "neutre")
         assert jeu is not None
         profil["game"] = jeu
         jeu2, message = G.demarrer_jeu(
-            G.TYPE_DEUX_VERITES, profil, "froid"
+            G.TYPE_DEUX_VERITES, profil, "neutre"
         )
         assert jeu2 is None and "déjà" in message
 
 
 class TestDeuxVeritesUnMensonge:
-    def _demarrer(self, stage="froid"):
+    def _demarrer(self, stage="neutre"):
         profil = _profil(PERSONNAGE_RICHE, stage)
         jeu, ouverture = G.demarrer_jeu(G.TYPE_DEUX_VERITES, profil, stage)
         assert jeu is not None
@@ -119,7 +131,7 @@ class TestDeuxVeritesUnMensonge:
 
     def test_devine_le_mensonge_gagne_puis_manche_2(self):
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, f"c'est le {jeu['mensonge']}", "froid")
+        res = G.traiter_message_jeu(profil, f"c'est le {jeu['mensonge']}", "neutre")
         assert res is not None
         assert res["points"] == G.POINTS_2V1M_GAGNE
         assert res["mode"] == "remplace"
@@ -142,7 +154,7 @@ class TestDeuxVeritesUnMensonge:
         assert public["label"] and public["chips"] == []
 
         # La révélation clôt la manche 2 avec un bonus de participation.
-        res3 = G.traiter_message_jeu(profil, "bravo c'est ça !", "froid")
+        res3 = G.traiter_message_jeu(profil, "bravo c'est ça !", "neutre")
         assert res3 is not None
         assert res3["points"] == G.POINTS_2V1M_MANCHE2
         assert res3["mode"] == "ajoute" and res3["fin"] is True
@@ -151,39 +163,39 @@ class TestDeuxVeritesUnMensonge:
     def test_devine_faux_perdu_puis_manche_2(self):
         profil, jeu, _ = self._demarrer()
         mauvais = [n for n in (1, 2, 3) if n != jeu["mensonge"]][0]
-        res = G.traiter_message_jeu(profil, f"le {mauvais}", "froid")
+        res = G.traiter_message_jeu(profil, f"le {mauvais}", "neutre")
         assert res is not None
         assert res["points"] == G.POINTS_2V1M_PERDU
         assert res["fin"] is False and jeu["step"] == "inverse"
         assert "TROMP" in res["directive"]
         # La manche 2 peut être passée (« pas maintenant »).
-        res2 = G.traiter_message_jeu(profil, "pas maintenant 😅", "froid")
+        res2 = G.traiter_message_jeu(profil, "pas maintenant 😅", "neutre")
         assert res2 is not None and res2["fin"] is True
         assert profil["game"] is None
 
     def test_mots_chiffres_detectes(self):
         profil, jeu, _ = self._demarrer()
         mot = {1: "un", 2: "deux", 3: "trois"}[jeu["mensonge"]]
-        res = G.traiter_message_jeu(profil, f"je dis {mot}", "froid")
+        res = G.traiter_message_jeu(profil, f"je dis {mot}", "neutre")
         assert res is not None and res["points"] == G.POINTS_2V1M_GAGNE
         assert jeu["step"] == "inverse"
 
     def test_ouverture_jeu_de_l_app(self):
         """Le jeu est présenté comme une fonctionnalité de l'application."""
-        for stage in ("froid", "neutre", "proche"):
+        for stage in ("neutre", "chaleureux", "proche"):
             _, _, ouverture = self._demarrer(stage)
             assert "app" in ouverture.lower()
 
     def test_babillage_n_est_pas_une_devinette(self):
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, "j'ai un truc en tête aussi 😄", "froid")
+        res = G.traiter_message_jeu(profil, "j'ai un truc en tête aussi 😄", "neutre")
         assert res is None
         assert profil["game"] is not None  # le jeu continue
 
     def test_abandon_silencieux_apres_3_messages_hors_jeu(self):
         profil, jeu, _ = self._demarrer()
         for i in range(G.MAX_INACTIF):
-            res = G.traiter_message_jeu(profil, "bla bla bla", "froid")
+            res = G.traiter_message_jeu(profil, "bla bla bla", "neutre")
         assert res is not None and res["fin"] is True
         assert res["points"] == 0 and profil["game"] is None
 
@@ -197,7 +209,7 @@ class TestDeuxVeritesUnMensonge:
 
 
 class TestActionOuVerite:
-    def _demarrer(self, stage="reserve"):
+    def _demarrer(self, stage="neutre"):
         profil = _profil(PERSONNAGE_RICHE, stage)
         jeu, ouverture = G.demarrer_jeu(G.TYPE_ACTION_VERITE, profil, stage)
         assert jeu is not None
@@ -210,7 +222,7 @@ class TestActionOuVerite:
 
     def test_choix_action_propose_un_defi(self):
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, "action", "reserve")
+        res = G.traiter_message_jeu(profil, "action", "neutre")
         assert res is not None
         assert res["points"] == 0 and res["fin"] is False
         assert jeu["step"] == "reponse" and jeu["invite"]
@@ -219,14 +231,14 @@ class TestActionOuVerite:
     def test_choix_verite_avec_puce_client(self):
         """La puce « Vérité » (accentué) passe la détection sans accents."""
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, "Vérité", "reserve")
+        res = G.traiter_message_jeu(profil, "Vérité", "neutre")
         assert res is not None
         assert jeu["step"] == "reponse"
         assert "VÉRITÉ" in res["directive"]
 
     def test_invites_respectent_le_stade(self):
         """Aucune invite trop intime proposée sous son stade (20 tirages)."""
-        for stage in ("reserve", "neutre", "chaleureux", "proche"):
+        for stage in ("neutre", "chaleureux", "proche"):
             profil, jeu, _ = self._demarrer(stage)
             for i in range(20):
                 profil["game"] = {"type": "action_verite", "step": "choix",
@@ -247,8 +259,8 @@ class TestActionOuVerite:
 
     def test_reponse_clot_avec_participation(self):
         profil, jeu, _ = self._demarrer()
-        G.traiter_message_jeu(profil, "vérité", "reserve")
-        res = G.traiter_message_jeu(profil, "mon pire rendez-vous c'était…", "reserve")
+        G.traiter_message_jeu(profil, "vérité", "neutre")
+        res = G.traiter_message_jeu(profil, "mon pire rendez-vous c'était…", "neutre")
         assert res is not None
         assert res["points"] == G.POINTS_AOV_PARTICIPATION
         assert res["mode"] == "ajoute" and res["fin"] is True
@@ -259,13 +271,13 @@ class TestActionOuVerite:
         public = G.jeu_public(jeu)
         assert public["chips"] == ["Action", "Vérité"]
         # Après choix : plus de puces (réponse libre), toujours sans secret.
-        G.traiter_message_jeu(profil, "action", "reserve")
+        G.traiter_message_jeu(profil, "action", "neutre")
         public = G.jeu_public(jeu)
         assert public["chips"] == []
 
 
 class TestVingtQuestions:
-    def _demarrer(self, character=PERSONNAGE_RICHE, stage="froid"):
+    def _demarrer(self, character=PERSONNAGE_RICHE, stage="neutre"):
         profil = _profil(character, stage)
         jeu, ouverture = G.demarrer_jeu(G.TYPE_VINGT_QUESTIONS, profil, stage)
         assert jeu is not None
@@ -285,8 +297,8 @@ class TestVingtQuestions:
             "interests": "L'escalade de bloc en salle et la lecture",
         }
         for _ in range(20):
-            profil = _profil(perso, "froid")
-            jeu, _ = G.demarrer_jeu(G.TYPE_VINGT_QUESTIONS, profil, "froid")
+            profil = _profil(perso, "neutre")
+            jeu, _ = G.demarrer_jeu(G.TYPE_VINGT_QUESTIONS, profil, "neutre")
             secret = G._secret_par_id(jeu["secret_id"])
             domaines_perso = G._mots_interets(perso)
             lie = bool(domaines_perso & set(secret["domaines"]))
@@ -296,7 +308,7 @@ class TestVingtQuestions:
 
     def test_question_comptee_et_directive_regles(self):
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, "Est-ce que ça se mange ?", "froid")
+        res = G.traiter_message_jeu(profil, "Est-ce que ça se mange ?", "neutre")
         assert res is not None and res["fin"] is False
         assert jeu["questions"] == 1
         assert "oui / non / parfois" in res["directive"]
@@ -309,7 +321,7 @@ class TestVingtQuestions:
         profil, jeu, _ = self._demarrer()
         secret = G._secret_par_id(jeu["secret_id"])
         devinette = f"je pense que c'est {secret['mots'][0]} ?"
-        res = G.traiter_message_jeu(profil, devinette, "froid")
+        res = G.traiter_message_jeu(profil, devinette, "neutre")
         assert res is not None
         assert res["points"] == G.POINTS_20Q_GAGNE and res["fin"] is True
         assert profil["game"] is None
@@ -329,14 +341,14 @@ class TestVingtQuestions:
             "bref tu fais quoi de beau ces jours-ci dis-moi tout"
         )
         assert len(long_msg) > 80
-        res = G.traiter_message_jeu(profil, long_msg, "froid")
+        res = G.traiter_message_jeu(profil, long_msg, "neutre")
         assert res is None or res["points"] != G.POINTS_20Q_GAGNE
 
     def test_indice_aux_questions_5_10_15(self):
         profil, jeu, _ = self._demarrer()
         secret = G._secret_par_id(jeu["secret_id"])
         for n in range(1, 6):
-            res = G.traiter_message_jeu(profil, f"question numéro {n} ?", "froid")
+            res = G.traiter_message_jeu(profil, f"question numéro {n} ?", "neutre")
         assert res is not None
         assert jeu["questions"] == 5
         assert jeu["indices_donnes"] == 1
@@ -346,7 +358,7 @@ class TestVingtQuestions:
         profil, jeu, _ = self._demarrer()
         res = None
         for _ in range(jeu["max"]):
-            res = G.traiter_message_jeu(profil, "et là, ça se mange ?", "froid")
+            res = G.traiter_message_jeu(profil, "et là, ça se mange ?", "neutre")
             if res and res["fin"]:
                 break
         assert res is not None and res["fin"] is True
@@ -357,7 +369,7 @@ class TestVingtQuestions:
 
     def test_abandon_par_le_joueur(self):
         profil, jeu, _ = self._demarrer()
-        res = G.traiter_message_jeu(profil, "J'abandonne 🛑", "froid")
+        res = G.traiter_message_jeu(profil, "J'abandonne 🛑", "neutre")
         assert res is not None and res["fin"] is True and res["points"] == 0
         secret = G._secret_par_id(jeu["secret_id"])
         assert secret["nom"] in res["directive"]
@@ -365,18 +377,18 @@ class TestVingtQuestions:
     def test_babillage_ne_compte_pas_comme_question(self):
         profil, jeu, _ = self._demarrer()
         for _ in range(2):
-            G.traiter_message_jeu(profil, "hihi", "froid")
+            G.traiter_message_jeu(profil, "hihi", "neutre")
         assert jeu["questions"] == 0
         # 3e message hors-jeu → abandon silencieux.
-        res = G.traiter_message_jeu(profil, "hihi", "froid")
+        res = G.traiter_message_jeu(profil, "hihi", "neutre")
         assert res is not None and res["fin"] is True
 
 
 class TestJeuPublicSansSecret:
     def test_aucune_fuite_d_etat_interne(self):
-        profil = _profil(PERSONNAGE_RICHE, "froid")
+        profil = _profil(PERSONNAGE_RICHE, "neutre")
         for gtype in (G.TYPE_DEUX_VERITES, G.TYPE_VINGT_QUESTIONS):
-            jeu, _ = G.demarrer_jeu(gtype, profil, "froid")
+            jeu, _ = G.demarrer_jeu(gtype, profil, "neutre")
             assert jeu is not None
             public = G.jeu_public(jeu)
             assert public is not None
@@ -400,8 +412,8 @@ class TestIntegrationPromptBuilder:
         from server.config import get_config
         from server.llm.prompt_builder import PromptBuilder
 
-        profil = _profil(PERSONNAGE_RICHE, "froid")
-        jeu, _ = G.demarrer_jeu(G.TYPE_DEUX_VERITES, profil, "froid")
+        profil = _profil(PERSONNAGE_RICHE, "neutre")
+        jeu, _ = G.demarrer_jeu(G.TYPE_DEUX_VERITES, profil, "neutre")
         assert jeu is not None
         directive = G.directive_en_cours(jeu, PERSONNAGE_RICHE)
         assert "NE" in directive and "RÉVÈLE JAMAIS" in directive
@@ -414,13 +426,13 @@ class TestIntegrationPromptBuilder:
         assert "MINI-JEU" not in texte_sans
 
     def test_directive_en_cours_par_jeu(self):
-        profil = _profil(PERSONNAGE_RICHE, "reserve")
-        jeu_aov, _ = G.demarrer_jeu(G.TYPE_ACTION_VERITE, profil, "reserve")
+        profil = _profil(PERSONNAGE_RICHE, "neutre")
+        jeu_aov, _ = G.demarrer_jeu(G.TYPE_ACTION_VERITE, profil, "neutre")
         assert jeu_aov is not None
         d = G.directive_en_cours(jeu_aov, PERSONNAGE_RICHE)
         assert "action ou vérité" in d.lower()
         # Après choix : la directive cite l'invite.
         profil["game"] = jeu_aov
-        G.traiter_message_jeu(profil, "action", "reserve")
+        G.traiter_message_jeu(profil, "action", "neutre")
         d2 = G.directive_en_cours(jeu_aov, PERSONNAGE_RICHE)
         assert jeu_aov["invite"] in d2

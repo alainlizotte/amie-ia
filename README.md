@@ -54,16 +54,16 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
 | 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
 | 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit ; relances espacées de façon croissante puis plafonnées (max 6, dont un adieu), **-15 points** par relance ignorée — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence sans jamais régresser : ennui → inquiétude → tristesse → frustration → colère blessée |
-| 💞 **Rendez-vous interactifs** | Le « réalisateur invisible » : le personnage propose une activité en texto (film synchronisé à froid → escapade à proche, 2 scénarios par stade), votre réponse fait avancer la scène — acceptation, refus, choix implicites — et une **photo souvenir à deux** (votre photo + le personnage, en mode édition ComfyUI) ponctue les rencontres en vrai. 100 % conversation, aucune interface dédiée |
+| 💞 **Rendez-vous interactifs** | Dès le stade « Neutre », le « réalisateur invisible » : le personnage propose une activité en texto (activités à distance, premières rencontres, escapades — 2 scénarios par stade), votre réponse fait avancer la scène — acceptation, refus, choix implicites — et une **photo souvenir à deux** (votre photo + le personnage, en mode édition ComfyUI) ponctue les rencontres en vrai. 100 % conversation, aucune interface dédiée |
 | 🎮 **Jeu de l'app** | « Deux vérités, un mensonge » présenté comme une fonctionnalité de l'application (carte d'annonce) : le personnage joue comme un humain, vous devinez, puis la **manche 2** inverse les rôles — à vous de piéger |
 | 🤳 **Initiative photo** | Le personnage peut envoyer de lui-même des photos pertinentes (stade Neutre+) |
-| 🎲 **Mini-jeux** | Trois jeux de conversation lancés d'un bouton — « Deux vérités, un mensonge », « Action ou vérité », « 20 questions » — questions liées au personnage et filtrées par stade, issue vérifiée côté serveur, points de relation à la clé |
+| 🎲 **Mini-jeux** | Trois jeux de conversation lancés d'un bouton dès le stade « Neutre » — « Deux vérités, un mensonge », « Action ou vérité », « 20 questions » — questions liées au personnage, issue vérifiée côté serveur, points de relation à la clé |
 | 🔒 **Garde-fous techniques** | Tenue des photos contrainte par stade côté serveur — le LLM ne peut pas contourner : sobre à « neutre », « jamais nue » à « chaleureux », **« jamais nue » à « proche » par défaut** (nudité explicite activable via `image.allow_explicit_from_proche: true`) |
 | 🧠 **Mémoire** | Extraction périodique de souvenirs + rappel sémantique (le personnage se souvient de vous) |
 | 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🔔 **Notifications OS** | Alertes système quand ton match écrit pendant que l'app est en arrière-plan — désactivable dans « Mon profil » |
-| 🔊 **Voix des messages** | Lecture vocale automatique (Web Speech API, voix du système, locale) avec un profil vocal par personnage — genre + personnalité → pitch/vitesse ; bouton 🔊 pour réécouter. Désactivable dans « Mon profil » |
+| 🔊 **Voix des messages** | À partir du stade « Chaleureux » : lecture vocale automatique (Web Speech API, voix du système, locale) avec un profil vocal par personnage — genre + personnalité → pitch/vitesse ; bouton 🔊 pour réécouter. Désactivable dans « Mon profil » |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 | 📱 **Mobile** | Panneau d'informations accessible en superposition via le bouton ⓘ |
 
@@ -176,15 +176,15 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   l'application** (carte d'annonce 🎮, comme les icebreakers Bumble/Hinge) :
   le personnage y joue comme un humain, jamais comme un bot — et la
   **manche 2** inverse les rôles (vous piégez, il/elle devine) :
-  - **Deux vérités, un mensonge** (dès « froid ») : 3 énoncés bâtis sur la
+  - **Deux vérités, un mensonge** (dès « neutre ») : 3 énoncés bâtis sur la
     fiche visible du personnage (2 vrais + 1 faux) ; le match devine « 1 »,
     « 2 » ou « 3 » — attention récompensée (+12 gagné, +4 perdu, ×
     multiplicateur), le mensonge est ensuite révélé.
-  - **Action ou vérité** (dès « réservé ») : après le choix du match, le
+  - **Action ou vérité** (dès « neutre ») : après le choix du match, le
     serveur tire la vérité ou le défi dans des banques graduées par stade
     (brise-glace à « froid » → audacieux à « proche ») et colorées par les
     intérêts du personnage ; répondre rapporte +6.
-  - **20 questions** (dès « froid ») : un objet secret lié à l'univers du
+  - **20 questions** (dès « neutre ») : un objet secret lié à l'univers du
     personnage (escalade → une raquette, lecture → un livre…) ; chaque
     question oui/non fait avancer le compteur, des indices tombent aux
     questions 5/10/15 ; trouvé en ≤ 20 questions : +14, sinon +4. La
@@ -196,19 +196,19 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   contient JAMAIS le mensonge ni l'objet secret.
 - **Rendez-vous interactifs** (`server/relation/dates.py`) — le
   « réalisateur invisible » : aucune interface dédiée, tout se joue dans la
-  conversation. Le serveur propose (cooldown 48 h, ≥ 3 échanges, gates par
-  stade) ; votre réponse est classée déterministement : **acceptée** (les
+  conversation. **Disponible dès le stade « neutre »** — rien avant : à
+  froid et réservé, on discute simplement, une invitation serait
+  prématurée. Le serveur propose (cooldown 48 h, ≥ 3 échanges) ; votre
+  réponse est classée déterministement : **acceptée** (les
   étapes se déroulent, une par tour), **refusée** (dignité, aucune
   pression) ou **évasive** (une relance douce, puis laisser-aller). Les
   étapes à « moment clé » offrent des choix implicites détectés par
   mots-clés (terrasse ou intérieur ? fromages ou douceurs ?…) avec une
-  scène dédiée par choix. Scénarios par stade (2 chacun) :
-  - **froid / réservé** : activités à distance crédibles entre inconnus —
-    film synchronisé, playlist, défi cuisine à distance, balade commentée
-    (jamais de rencontre physique avant « neutre », conforme aux consignes
-    de stade) ;
-  - **neutre** : première vraie rencontre (premier café, marché du
-    samedi) ;
+  scène dédiée par choix. Deux scénarios par stade :
+  - **neutre — à distance** : film synchronisé, playlist, défi cuisine
+    chacun chez soi, balade commentée (crédibles sans s'être rencontrés ;
+    jamais de rencontre physique décrite dans ces scénarios) ;
+  - **neutre — en vrai** : premier café, marché du samedi ;
   - **chaleureux** : souper cuisiné à deux, soirée arcade ;
   - **proche** : escapade d'une journée, soirée cocooning.
   À la conclusion : +10 points, le souvenir est rangé en mémoire (« notre

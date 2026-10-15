@@ -262,6 +262,7 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
     portrait = next((p for p in photos if p.get("kind") == "portrait"), None)
     preset_id = character.get("preset_id")
     total_events = len(P.get_events_for_character(preset_id)) if preset_id else 0
+    stage = profile.get("relationship_stage", "froid")
     return {
         "session_id": profile.get("meta", {}).get("session_id", ""),
         "titre": profile.get("meta", {}).get("titre", ""),
@@ -278,7 +279,7 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
         },
         "user_info": profile.get("user_info", {}),
         "score": profile.get("relationship_score", 100),
-        "stage": profile.get("relationship_stage", "froid"),
+        "stage": stage,
         "interaction_count": profile.get("interaction_count", 0),
         "last_interaction": profile.get("last_interaction"),
         "unanswered_messages": int(profile.get("unanswered_messages", 0) or 0),
@@ -292,11 +293,16 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
         "game": G.jeu_public(profile.get("game")),
         # Options d'expérience du compte (notifications OS, voix) + profil
         # vocal du personnage (genre/pitch/rate → Web Speech API client).
+        # La voix n'est disponible qu'à partir du stade « chaleureux » :
+        # en dessous, on ne se connaît pas encore assez pour « se parler ».
         "options": _options_utilisateur(
             UP.charger_profil(_data_dir(),
                               (profile.get("meta", {}) or {}).get("user", ""))
         ),
-        "voix": _profil_voix(character),
+        "voix": (
+            _profil_voix(character)
+            if stage in ("chaleureux", "proche") else None
+        ),
     }
 
 

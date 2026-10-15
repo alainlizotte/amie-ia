@@ -20,8 +20,8 @@ Les points de relation sont déterministes, multipliés par le barème
 
 Gates par stade (server/relation/stages.can_play_stage) :
 - rejet  : aucun jeu (le personnage ne répond plus) ;
-- froid  : deux vérités + 20 questions (brise-glace) ;
-- réservé : + action ou vérité (plus personnel).
+- neutre : les trois jeux (brise-glace de l'app une fois la glace brisée) ;
+- rien avant « neutre » : à froid, on discute simplement.
 """
 
 from __future__ import annotations
@@ -45,17 +45,17 @@ JEUX_DISPONIBLES: dict[str, dict[str, Any]] = {
     TYPE_DEUX_VERITES: {
         "label": "Deux vérités, un mensonge",
         "emoji": "🤥",
-        "min_stage": "froid",
+        "min_stage": "neutre",
     },
     TYPE_ACTION_VERITE: {
         "label": "Action ou vérité",
         "emoji": "🎭",
-        "min_stage": "reserve",
+        "min_stage": "neutre",
     },
     TYPE_VINGT_QUESTIONS: {
         "label": "20 questions",
         "emoji": "❓",
-        "min_stage": "froid",
+        "min_stage": "neutre",
     },
 }
 

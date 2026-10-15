@@ -298,9 +298,10 @@ export function MonProfilPage() {
           />
           <span>
             <span className="font-medium text-rose-100">🔊 Voix des messages</span>{" "}
-            — tes matchs « parlent » : lecture automatique de leurs messages
-            avec une voix adaptée à leur genre et leur personnalité (bouton 🔊
-            sur chaque message pour réécouter). {voixDisponible() ? "" : "(Voix non disponible dans ce navigateur)"}
+            — à partir du stade « Chaleureux », tes matchs « parlent » :
+            lecture automatique de leurs messages avec une voix adaptée à
+            leur genre et leur personnalité (bouton 🔊 sur chaque message
+            pour réécouter). {voixDisponible() ? "" : "(Voix non disponible dans ce navigateur)"}
           </span>
         </label>
       </div>

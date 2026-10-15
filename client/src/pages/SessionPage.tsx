@@ -147,8 +147,8 @@ export function SessionPage() {
           characterName={profile.character.name}
           canRequestPhoto={canPhoto}
           game={canJeux ? game : null}
-          voix={profile.voix}
-          voixActive={profile.options?.voix ?? true}
+          voix={profile.voix ?? undefined}
+          voixActive={(profile.options?.voix ?? true) && !!profile.voix}
           onSend={(text) => {
             useAmie.getState().setBusy(true);
             socketRef.current?.say(text);

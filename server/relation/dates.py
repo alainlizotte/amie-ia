@@ -22,10 +22,12 @@ mécanique) :
 Le LLM reçoit à chaque tour une directive de scène et incarne le
 personnage — il ne décide ni de l'issue ni des étapes.
 
-Gates par stade : « froid » et « réservé » = activités à distance
-(crédibles entre inconnus — jamais de rencontre physique avant « neutre »,
-conforme aux consignes de stage) ; « neutre » = première vraie rencontre ;
-« chaleureux » / « proche » = sorties et moments de couple.
+Gates par stade : aucun rendez-vous avant « neutre » (à froid/réservé, on
+discute simplement — une invitation serait prématurée) ; à « neutre »,
+les activités à distance (mode « distance » : film synchronisé, playlist,
+cuisine chacun chez soi) sont crédibles même sans s'être rencontrés ; les
+rencontres en vrai (mode « presentiel ») et les moments de couple
+suivent leur progression naturelle.
 """
 
 from __future__ import annotations
@@ -63,7 +65,8 @@ BANQUE_DATES: list[dict[str, Any]] = [
     {
         "id": "film_sync",
         "titre": "Le film synchronisé",
-        "min_stage": "froid",
+        "min_stage": "neutre",
+        "mode": "distance",
         "proposal": (
             "Tu propose à ton match de regarder LE MÊME film en même temps "
             "ce soir, chacun chez soi, en se commentant la soirée par texto "
@@ -142,7 +145,8 @@ BANQUE_DATES: list[dict[str, Any]] = [
     {
         "id": "playlist",
         "titre": "La playlist de la semaine",
-        "min_stage": "froid",
+        "min_stage": "neutre",
+        "mode": "distance",
         "proposal": (
             "Tu annonce à ton match que tu viens de préparer une playlist de "
             "cinq morceaux « pour mieux se connaître » et tu lui propose de "
@@ -210,7 +214,8 @@ BANQUE_DATES: list[dict[str, Any]] = [
     {
         "id": "cuisine_sync",
         "titre": "Le défi cuisine à distance",
-        "min_stage": "reserve",
+        "min_stage": "neutre",
+        "mode": "distance",
         "proposal": (
             "Tu propose un défi à ton match : cuisiner LE MÊME plat chacun "
             "chez soi ce week-end (choisis un plat simple et parlant, en "
@@ -287,7 +292,8 @@ BANQUE_DATES: list[dict[str, Any]] = [
     {
         "id": "balade_commentee",
         "titre": "La balade commentée",
-        "min_stage": "reserve",
+        "min_stage": "neutre",
+        "mode": "distance",
         "proposal": (
             "Tu propose une balade commentée à distance : ce week-end, "
             "chacun marche de son côté et se raconte ce qu'il voit par "
@@ -358,6 +364,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_cafe",
         "titre": "Le premier café",
         "min_stage": "neutre",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "C'est le bon moment : tu propose à ton match un premier café "
@@ -438,6 +445,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_marche",
         "titre": "Le marché du samedi",
         "min_stage": "neutre",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "Tu propose à ton match un rendez-vous au marché public du "
@@ -513,6 +521,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_souper",
         "titre": "Le souper cuisiné à deux",
         "min_stage": "chaleureux",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "Tu invite ton match à souper CHEZ TOI — tu cuisines (ou vous "
@@ -590,6 +599,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_arcade",
         "titre": "La soirée arcade",
         "min_stage": "chaleureux",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "Tu propose une soirée arcade/billard à ton match : défis, "
@@ -668,6 +678,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_escapade",
         "titre": "L'escapade d'un jour",
         "min_stage": "proche",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "Tu propose à ton match une escapade d'une journée : petite "
@@ -748,6 +759,7 @@ BANQUE_DATES: list[dict[str, Any]] = [
         "id": "rdv_cocooning",
         "titre": "La soirée cocooning",
         "min_stage": "proche",
+        "mode": "presentiel",
         "photo": "deux",
         "proposal": (
             "Après une semaine chargée, tu propose à ton match une soirée "
@@ -900,6 +912,7 @@ def directive_proposition(
         f"Tu es {name}. Ce moment doit se vivre naturellement dans ta "
         "conversation — ne mentionne JAMAIS la mécanique, un « scénario », "
         "une « étape » ni un système.\n"
+        f"{_instruction_respect_stade(stage, str(scenario.get('mode', 'presentiel')))}\n"
         f"ACTION OBLIGATOIRE POUR CETTE RÉPONSE : {_interpoler(scenario['proposal'], character)}\n"
         "Écris ton texto d'invitation à ta façon (1 à 4 phrases), fidèle à "
         "ta personnalité et au stade de la relation. Attends sa réponse — "
@@ -907,13 +920,19 @@ def directive_proposition(
     )
 
 
-def _instruction_respect_stade(stage: str) -> str:
-    """Rappel de crédibilité : ce qui est jouable selon le stade."""
-    if stage in ("froid", "reserve"):
+def _instruction_respect_stade(stage: str, mode: str) -> str:
+    """Rappel de crédibilité : présentiel ou à distance selon le scénario.
+
+    Les activités « distance » (film synchronisé, playlist…) restent
+    crédibles même à « neutre » sans s'être rencontrés en vrai — l'important
+    est de ne JAMAIS raconter une rencontre physique dans un scénario à
+    distance, ni de la décrire à distance quand vous êtes ensemble.
+    """
+    if mode == "distance":
         return (
-            "IMPORTANT : vous ne vous êtes PAS encore rencontrés en vrai — "
-            "tout se vit à distance (texto, appels, activités synchronisées). "
-            "Ne décris JAMAIS une rencontre physique à ce stade."
+            "IMPORTANT : cette activité se vit À DISTANCE (chacun de son "
+            "côté de l'écran, chez soi) — décris-la comme vécue de TON côté "
+            "et en live par textos ; ne décris JAMAIS une rencontre physique."
         )
     return (
         "Vous vous êtes rencontrés en vrai : décris la scène comme vécue "
@@ -931,7 +950,7 @@ def directive_beat(
         f"Tu es {character.get('name') or 'Ton personnage'}. Ce moment se "
         "vit naturellement dans la conversation — ne mentionne JAMAIS la "
         "mécanique, un « scénario », une « étape » ni un système.\n"
-        f"{_instruction_respect_stade(stage)}\n"
+        f"{_instruction_respect_stade(stage, str(scenario.get('mode', 'presentiel')))}\n"
         f"LE MOMENT : {_interpoler(beat['scene'], character)}\n"
         "Écris ton texto (1 à 4 phrases) et donne la réplique au match.]"
     )
@@ -947,21 +966,21 @@ def directive_moment(
         f"Tu es {character.get('name') or 'Ton personnage'}. Ce moment se "
         "vit naturellement dans la conversation — ne mentionne JAMAIS la "
         "mécanique, un « scénario », une « étape » ni un système.\n"
-        f"{_instruction_respect_stade(stage)}\n"
+        f"{_instruction_respect_stade(stage, str(scenario.get('mode', 'presentiel')))}\n"
         f"LE MOMENT : {_interpoler(texte_scene, character)}\n"
         "Écris ton texto (1 à 4 phrases) et donne la réplique au match.]"
     )
 
 
 def directive_conclusion(
-    scenario: dict[str, Any], character: dict[str, Any], stage: str
+    scenario: dict[str, Any], character: dict[str, Any], stage: str,
 ) -> str:
     """Bloc LLM du beat final (clôture du rendez-vous)."""
     return (
         "[SCÈNE À VIVRE — FIN DU RENDEZ-VOUS\n"
         f"Tu es {character.get('name') or 'Ton personnage'}. Ne mentionne "
         "JAMAIS la mécanique ni un système.\n"
-        f"{_instruction_respect_stade(stage)}\n"
+        f"{_instruction_respect_stade(stage, str(scenario.get('mode', 'presentiel')))}\n"
         f"LE MOMENT : {_interpoler(scenario['conclusion'], character)}\n"
         "Écris ton texto de clôture (1 à 4 phrases), sincère selon le "
         "stade — laisse une porte ouverte à la suite.]"

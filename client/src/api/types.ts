@@ -32,8 +32,9 @@ export interface PublicProfile {
   game?: GameInfo | null;
   /** Options d'expérience du compte (absent = activé). */
   options?: { notifications: boolean; voix: boolean };
-  /** Profil vocal du personnage (genre, pitch, rate — Web Speech API). */
-  voix?: ProfilVoix;
+  /** Profil vocal du personnage (genre, pitch, rate — Web Speech API).
+   * Null sous le stade « Chaleureux » : la voix se débloque avec l'intimité. */
+  voix?: ProfilVoix | null;
 }
 
 /** Profil vocal — voir server/main.py `_profil_voix` (miroir). */
