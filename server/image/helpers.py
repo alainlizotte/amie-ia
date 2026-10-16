@@ -128,12 +128,24 @@ def selfie_clause(character: dict[str, Any]) -> str:
 
 # Mots-clés signalant qu'un cadrage alternatif est explicitement demandé
 # (dans la scène du directeur photo ou le hint utilisateur) — dans ce cas,
-# le selfie par défaut n'est PAS imposé (« sauf avis contraire »).
+# le selfie par défaut n'est PAS imposé (« sauf avis contraire »). La liste
+# couvre les formulations courantes d'un appareil POSÉ à distance (téléphone
+# sur une table, posé sur une table de nuit, filmé de l'autre bout de la
+# pièce…) et pas seulement les prises par un tiers.
 _FRAMING_HINT_RE = re.compile(
     r"\b(selfie|mirror|miroir|point of view|pov|taken by|held by|"
     r"photographer|someone else|stranger|passer-?by|tripod|"
     r"holding the camera|photobooth|prise par|prise de vue|"
-    r"photographe|quelqu.un d.autre|appareil sur pied)\b",
+    r"photographe|quelqu.un d.autre|appareil sur pied|"
+    r"camera (?:on|set|placed|resting|propped|positioned|left|sitting|pointed|aimed)|"
+    r"phone (?:on|set|placed|resting|propped|positioned|left|leaning|sitting)|"
+    r"(?:propped|resting|leaning|placed|positioned|set) (?:up )?(?:on|against|by|near)|"
+    r"on (?:a |the |his |her |its )?(?:table|desk|nightstand|dresser|shelf|"
+    r"counter|windowsill|bedside|floor|chair|sofa|couch)|"
+    r"(?:filmed|recorded|shot|captured) (?:from|by)|from across|"
+    r"across the (?:room|bed|table)|distance shot|wide shot|"
+    r"full[- ](?:body|frame) shot|seen from|viewed from|framed from|"
+    r"webcam|hands?-?free)\b",
     re.IGNORECASE,
 )
 
@@ -354,9 +366,14 @@ def director_system(character: dict[str, Any], stage: str,
         f"when it feels natural (she may look away, look down, or be "
         f"absorbed in an activity).",
         "DEFAULT CAMERA FRAMING: a selfie taken with her own phone held "
-        "in her hand, arm extended — describe a different framing ONLY if "
-        "the scene clearly calls for it (e.g. someone else takes the "
-        "photo, mirror shot, tripod).",
+        "in her hand, arm extended — keep it UNLESS the scene clearly "
+        "calls for something else.",
+        "WHEN THE FRAMING IS NOT A SELFIE, make it EXPLICIT and "
+        "unmistakable in the description: say where the camera/phone is "
+        "(e.g. 'phone propped on the nightstand, filmed from across the "
+        "bed') or WHO takes the photo (e.g. 'photo taken by a passerby'). "
+        "The framing written in the description is what the generator "
+        "follows.",
         "If the user made a specific request in the conversation and "
         f"{name} accepted it, agreed to it or is doing it, that request "
         "has TOP PRIORITY — describe exactly what was asked.",

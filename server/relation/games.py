@@ -410,49 +410,85 @@ FAUX_METIERS = [
 ]
 
 
-def _enonces_2v1m(character: dict[str, Any]) -> Optional[tuple[list[str], int]]:
+def _enonces_2v1m(
+    character: dict[str, Any], profile: dict[str, Any]
+) -> Optional[tuple[list[str], int]]:
     """(3 énoncés mélangés, numéro du mensonge 1-3) ou None si pas assez de
     matière.
 
     Les énoncés VRAIS sont vérifiables dans la fiche visible du personnage
-    (âge, intérêts, métier) ; le mensonge la contredit.
+    (âge, intérêts, métier) ; le mensonge la contredit. Chaque énoncé est
+    tiré d'un pool de formulations (variété) avec anti-répétition sur les
+    ids (games_historique) — deux parties ne proposent pas les mêmes
+    énoncés tant qu'il reste du neuf.
     """
-    vraies: list[str] = []
-    fausses: list[str] = []
+    vraies: list[tuple[str, str]] = []
+    fausses: list[tuple[str, str]] = []
 
     age = _age(character)
+    interets = _segments_interets(character)
+    occ = _occupation_court(character)
+
+    # --- Énoncés VRAIS (vérifiables dans la fiche visible). --- #
     if age is not None:
-        vraies.append(f"J'ai {age} ans.")
+        vraies.append(("tv_age1", f"J'ai {age} ans."))
+        vraies.append(("tv_age2", f"{age} ans, et bien décidé(e) à en profiter."))
+    if interets:
+        i1 = interets[0]
+        vraies.append(("tv_i1a", f"Mon vrai passe-temps du moment, c'est {i1}."))
+        vraies.append(("tv_i1b", f"Je pourrais parler pendant des heures de {i1}."))
+        vraies.append(("tv_i1c", f"Mon déclic du moment ? {i1}."))
+    if len(interets) >= 2:
+        i2 = interets[1]
+        vraies.append(("tv_i2a", f"Et je passe aussi pas mal de temps sur {i2}."))
+        vraies.append(("tv_i2b", f"L'autre truc qui m'occupe beaucoup : {i2}."))
+    if occ:
+        vraies.append(("tv_occ1", f"Côté travail : {occ}."))
+        vraies.append(("tv_occ2", f"Pour gagner ma vie : {occ}."))
+
+    # --- Énoncés FAUX (l'anti-fiche : vérifiables comme controuvés). --- #
+    if interets:
+        i1 = interets[0]
+        fausses.append(("fv_i1a", f"Je n'ai jamais accroché avec {i1}, franchement pas mon truc."))
+        fausses.append(("fv_i1b", f"Je déteste tout ce qui touche à {i1}."))
+    if len(interets) >= 2:
+        i2 = interets[1]
+        fausses.append(("fv_i2a", f"{i2} ? Franchement, je n'ai jamais compris l'attrait."))
+    if age is not None:
         faux_age = age + 6 if random.random() < 0.5 else max(18, age - 6)
         if faux_age != age:
-            fausses.append(f"J'ai {faux_age} ans.")
-
-    interets = _segments_interets(character)
-    if interets:
-        vraies.append(f"Mon vrai passe-temps du moment, c'est {interets[0]}.")
-        fausses.append(
-            f"Je n'ai jamais accroché avec {interets[0]}, franchement pas mon truc."
-        )
-    if len(interets) >= 2:
-        vraies.append(f"Et je passe aussi pas mal de temps sur {interets[1]}.")
-        fausses.append(f"Je déteste tout ce qui touche à {interets[1]}.")
-
-    occ = _occupation_court(character)
-    if occ:
-        vraies.append(f"Côté travail : {occ}.")
-        fausses.append(f"Côté travail : {random.choice(FAUX_METIERS)}.")
+            fausses.append(("fv_age1", f"J'ai {faux_age} ans."))
+    fausses.append(("fv_occ1", f"Côté travail : {random.choice(FAUX_METIERS)}."))
+    fausses.append(("fv_occ2", f"À côté de tout ça, je suis aussi {random.choice(FAUX_METIERS)}."))
 
     if len(vraies) < 2 or not fausses:
         return None
 
-    choisis_vraies = random.sample(vraies, 2)
-    mensonge = random.choice(fausses)
+    utilises = set(_historique(profile))
 
-    enonces = choisis_vraies + [mensonge]
+    def choisir(pool: list[tuple[str, str]], exclus: set[str]) -> tuple[str, str]:
+        frais = [
+            (cid, texte) for cid, texte in pool
+            if f"dv:{cid}" not in utilises and cid not in exclus
+        ]
+        if not frais:
+            frais = [(cid, texte) for cid, texte in pool if cid not in exclus]
+        return random.choice(frais or pool)
+
+    v1 = choisir(vraies, set())
+    v2 = choisir(vraies, {v1[0]})
+    fausse = choisir(fausses, {v1[0], v2[0]})
+
+    # Anti-répétition : les formulations tirées ne reviendront pas avant un
+    # long moment (recyclage une fois le pool épuisé).
+    for cid in (v1[0], v2[0], fausse[0]):
+        _marquer_utilise(profile, f"dv:{cid}")
+
+    enonces = [v1[1], v2[1], fausse[1]]
     random.shuffle(enonces)
     # Index du mensonge en NUMÉROTATION JOUEUR (1-3, comme l'ouverture
     # « 1️⃣ 2️⃣ 3️⃣ » et les devinettes du match).
-    return enonces, enonces.index(mensonge) + 1
+    return enonces, enonces.index(fausse[1]) + 1
 
 
 # --------------------------------------------------------------------------- #
@@ -554,7 +590,7 @@ def demarrer_jeu(
     character = profile.get("character", {}) or {}
 
     if gtype == TYPE_DEUX_VERITES:
-        construit = _enonces_2v1m(character)
+        construit = _enonces_2v1m(character, profile)
         if construit is None:
             return None, (
                 "Pas assez de détails dans la fiche de ce personnage pour "
@@ -1003,18 +1039,18 @@ def jeu_public(jeu: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
         if step == "inverse":
             return {
                 "type": gtype,
-                "label": "Jeu de l'app · manche 2 — à toi de piéger (écris tes 3 énoncés) !",
+                "label": "Jeu - à toi de piéger !",
                 "chips": [],
             }
         if step == "inverse_devine":
             return {
                 "type": gtype,
-                "label": "Jeu de l'app · révéle ton mensonge !",
+                "label": "Jeu - révéle ton mensonge !",
                 "chips": [],
             }
         return {
             "type": gtype,
-            "label": "Jeu de l'app · devine le mensonge !",
+            "label": "Jeu - devine le mensonge !",
             "chips": ["1", "2", "3"],
         }
     if gtype == TYPE_ACTION_VERITE:

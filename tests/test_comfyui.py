@@ -54,6 +54,37 @@ class TestChargementWorkflow:
         assert seed == 42
 
 
+class TestPasDeStockageOutput:
+    """Les nœuds de sauvegarde sont remplacés par des aperçus : les images
+    passent par le dossier temp de ComfyUI (purgé), jamais output/."""
+
+    def test_saveimage_remplace_par_preview(self):
+        wf = {
+            "9": {"class_type": "SaveImage",
+                  "inputs": {"images": ["8", 0], "filename_prefix": "x"}},
+            "8": {"class_type": "VAEDecode", "inputs": {}},
+        }
+        graph = ComfyUIBackend._remplacer_sauvegardes_par_preview(wf)
+        assert graph["9"]["class_type"] == "PreviewImage"
+        assert graph["9"]["inputs"] == {"images": ["8", 0]}
+        assert "filename_prefix" not in graph["9"]["inputs"]
+
+    def test_saveimage_advanced_remplace(self):
+        wf = {
+            "461": {"class_type": "SaveImageAdvanced",
+                    "inputs": {"images": ["502", 0], "format": "png"}},
+            "502": {"class_type": "UnloadAllModels", "inputs": {}},
+        }
+        graph = ComfyUIBackend._remplacer_sauvegardes_par_preview(wf)
+        assert graph["461"]["class_type"] == "PreviewImage"
+        assert graph["461"]["inputs"]["images"] == ["502", 0]
+
+    def test_sans_save_rien_ne_change(self):
+        wf = {"8": {"class_type": "VAEDecode", "inputs": {}}}
+        graph = ComfyUIBackend._remplacer_sauvegardes_par_preview(wf)
+        assert graph["8"]["class_type"] == "VAEDecode"
+
+
 class TestMappingUsage:
     def test_les_deux_usages_pointent_vers_qwen_21(self, tmp_path):
         # portrait et photo partagent le graphe de génération Qwen 2.1.

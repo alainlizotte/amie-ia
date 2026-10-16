@@ -230,6 +230,30 @@ class ComfyUIBackend:
                 return k
         return None
 
+    @staticmethod
+    def _remplacer_sauvegardes_par_preview(graph: dict[str, Any]) -> dict[str, Any]:
+        """Remplace les nœuds de SAUVEGARDE (SaveImage/SaveImageAdvanced…) par
+        des aperçus (`PreviewImage`) : les images passent par le dossier TEMP
+        de ComfyUI — purgé automatiquement par ComfyUI lui-même — au lieu de
+        s'accumuler dans `output/`. Le serveur télécharge de toute façon le
+        PNG vers son propre stockage ; plus aucune copie n'est conservée côté
+        ComfyUI. Le câblage (`images`) du nœud d'origine est conservé.
+        """
+        for k in list(graph):
+            v = graph[k]
+            if not isinstance(v, dict):
+                continue
+            ct = str(v.get("class_type", ""))
+            if ct.startswith("SaveImage"):
+                source = (v.get("inputs") or {}).get("images")
+                if source is None:
+                    continue
+                graph[k] = {
+                    "class_type": "PreviewImage",
+                    "inputs": {"images": source},
+                }
+        return graph
+
     async def _poll_history(self, prompt_id: str) -> dict[str, Any]:
         deadline = time.time() + self.timeout_total
         while time.time() < deadline:
@@ -294,6 +318,10 @@ class ComfyUIBackend:
         if usage not in USAGES_VALIDES:
             raise ComfyUIError(f"Usage '{usage}' inconnu. Validés : {sorted(USAGES_VALIDES)}.")
         graph = self._load_workflow(usage)
+        # Aucune image ne doit s'accumuler dans output/ : les nœuds de
+        # sauvegarde deviennent des aperçus (dossier temp, purgé par
+        # ComfyUI) — le PNG est téléchargé vers le stockage du serveur.
+        graph = self._remplacer_sauvegardes_par_preview(graph)
         graph, seed = self._patch_workflow(graph, prompt_text, usage, seed)
         if ref_path is not None:
             nom_serveur = await self.upload_reference(ref_path)

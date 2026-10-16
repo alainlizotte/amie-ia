@@ -52,7 +52,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 💬 **Chat en temps réel** | WebSocket, réponses streaming du personnage, indicateur de saisie |
 | 🎭 **25 personnages** | Personnages prédéfinis (apparence, caractère, histoire) ou création personnalisée — portraits **générés localement à la première session** (aucune image pré-générée n'est versionnée dans le dépôt) et servis en **vignette dans le sélecteur** |
 | ❤️ **Relation chiffrée** | Score /1000 + stades affichés, évolution visible après chaque message |
-| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), sauf demande contraire. Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed |
+| 📸 **Album photo** | Portrait généré automatiquement à la rencontre ; photos qui reflètent la scène en cours (le « directeur photo » analyse les derniers échanges) — cadrage **selfie** par défaut (téléphone tenu dans sa main), mais un cadrage décrit dans la scène est respecté (appareil posé sur une table, filmé de loin, photo par un tiers…). Image ratée ? bouton **🔄 Régénérer** dans l'album : même scène, nouvelle seed. Les images ne s'accumulent **pas dans l'output ComfyUI** : nœuds de sauvegarde remplacés par des aperçus (dossier temp purgé automatiquement) |
 | 💌 **Messages proactifs** | Après 24 h de silence, le personnage vous écrit ; relances espacées de façon croissante puis plafonnées (max 6, dont un adieu), **-15 points** par relance ignorée — badge rouge avec compteur sur son encadré dans *Mes rencontres*. Le ton monte avec le silence sans jamais régresser : ennui → inquiétude → tristesse → frustration → colère blessée |
 | 💞 **Rendez-vous interactifs** | Dès le stade « Neutre », le « réalisateur invisible » : le personnage propose une activité en texto (activités à distance, premières rencontres, escapades — 2 scénarios par stade), votre réponse fait avancer la scène — acceptation, refus, choix implicites — et une **photo souvenir à deux** (votre photo + le personnage, en mode édition ComfyUI) ponctue les rencontres en vrai. 100 % conversation, aucune interface dédiée |
 | 🎮 **Jeu de l'app** | « Deux vérités, un mensonge » présenté comme une fonctionnalité de l'application (carte d'annonce) : le personnage joue comme un humain, vous devinez, puis la **manche 2** inverse les rôles — à vous de piéger |
@@ -177,9 +177,11 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   le personnage y joue comme un humain, jamais comme un bot — et la
   **manche 2** inverse les rôles (vous piégez, il/elle devine) :
   - **Deux vérités, un mensonge** (dès « neutre ») : 3 énoncés bâtis sur la
-    fiche visible du personnage (2 vrais + 1 faux) ; le match devine « 1 »,
-    « 2 » ou « 3 » — attention récompensée (+12 gagné, +4 perdu, ×
-    multiplicateur), le mensonge est ensuite révélé.
+    fiche visible du personnage (2 vrais + 1 faux), tirés d'un pool de
+    formulations avec anti-répétition — deux parties ne proposent pas les
+    mêmes énoncés ; le match devine « 1 », « 2 » ou « 3 » — attention
+    récompensée (+12 gagné, +4 perdu, × multiplicateur), le mensonge est
+    ensuite révélé.
   - **Action ou vérité** (dès « neutre ») : après le choix du match, le
     serveur tire la vérité ou le défi dans des banques graduées par stade
     (le personnage pose la question — le match se livre, jamais l'inverse ;

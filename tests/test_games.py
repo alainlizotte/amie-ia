@@ -205,7 +205,24 @@ class TestDeuxVeritesUnMensonge:
         assert public is not None
         assert set(public.keys()) == {"type", "label", "chips"}
         assert public["chips"] == ["1", "2", "3"]
+        assert public["label"] == "Jeu - devine le mensonge !"
         assert "mensonge" not in public
+
+    def test_enonces_varies_entre_parties(self):
+        """Anti-répétition : deux parties successives ne proposent pas les
+        mêmes énoncés tant qu'il reste des formulations inutilisées."""
+        profil = _profil(PERSONNAGE_RICHE, "neutre")
+        enonces_vus: list[frozenset[str]] = []
+        for _ in range(3):
+            jeu, _ = G.demarrer_jeu(G.TYPE_DEUX_VERITES, profil, "neutre")
+            assert jeu is not None
+            courant = frozenset(jeu["enonces"])
+            assert courant not in enonces_vus, "énoncés répétés à partie suivante"
+            enonces_vus.append(courant)
+            # Clôt la partie (devine le bon mensonge + passe la manche 2).
+            profil["game"] = jeu
+            G.traiter_message_jeu(profil, f"c'est le {jeu['mensonge']}", "neutre")
+            G.traiter_message_jeu(profil, "pas maintenant", "neutre")
 
 
 class TestActionOuVerite:

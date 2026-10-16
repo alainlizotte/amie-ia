@@ -68,6 +68,33 @@ class TestSelfie:
         )
         assert p.count("selfie") == 1
 
+    def test_appareil_pose_loin_pas_de_selfie(self):
+        # La scène décrit l'appareil POSÉ plus loin et filmé de loin : le
+        # selfie par défaut ne doit PAS être imposé.
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
+            scene="lying on the bed, phone propped on the nightstand, "
+                  "filmed from across the room, relaxed pose",
+        )
+        assert "selfie" not in p
+        assert "propped on the nightstand" in p
+
+    def test_vue_loin_table_pas_de_selfie(self):
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
+            scene="sitting at her desk, camera resting on the shelf, "
+                  "shot from across the room",
+        )
+        assert "selfie" not in p
+
+    def test_scene_simple_selfie_par_defaut(self):
+        # Sans indication de cadrage : le selfie reste le défaut.
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
+            scene="sitting at the dinner table, candlelight, smiling",
+        )
+        assert "selfie" in p
+
 
 class TestScene:
     def test_scene_avec_apparence_fiche_non_reinjectee(self):
