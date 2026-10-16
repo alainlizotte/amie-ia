@@ -100,6 +100,16 @@ memory:
   top_k: 6                  # souvenirs rappelés par tour
   min_similarity: 0.30      # seuil de rappel (cosinus)
 
+voice:
+  # Messages vocaux du personnage — parfois, à la place du texte (stade
+  # « chaleureux » requis, désactivable dans « Mon profil »). Backend
+  # edge-tts : voix neurales (Internet requis à la synthèse).
+  enabled: true
+  chance_per_reply: 0.25              # proba qu'une réponse devienne un vocal
+  voice_femme: fr-CA-SylvieNeural     # alternatives : fr-FR-DeniseNeural…
+  voice_homme: fr-CA-AntoineNeural    # alternatives : fr-FR-HenriNeural…
+  max_chars: 450                      # plafond du texte synthétisé
+
 image:
   enabled: true
   base_url: ""              # vide → env COMFYUI_BASE_URL → http://127.0.0.1:8188

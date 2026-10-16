@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server.config import load_config  # noqa: E402
+from server import voice as VOIX  # noqa: E402
 from server.main import _options_utilisateur, _profil_voix  # noqa: E402
 from server import user_profile as UP  # noqa: E402
 
@@ -39,32 +40,50 @@ class TestOptionsExperience:
         assert opts["notifications"] is True and opts["voix"] is True
 
 
-class TestGatingVoixParStade:
-    """La voix n'est disponible qu'à partir du stade « chaleureux »."""
+class TestGatingVocauxParStade:
+    """Les vocaux n'existent qu'à partir du stade « chaleureux »,
+    désactivables via le profil (server/voice.vocal_prevu)."""
 
-    def _profil_session(self, stage: str) -> dict:
-        return {
-            "meta": {"user": "VoixTest", "session_id": "abc123", "titre": "T"},
-            "character": {
-                "name": "Camille", "age": "27", "gender": "F",
-                "personality": "Enthousiaste et solaire",
-            },
-            "relationship_score": 900,
-            "relationship_stage": stage,
+    class _Cfg:
+        enabled = True
+        chance_per_reply = 1.0  # tirage toujours gagnant pour les tests
+        max_chars = 450
+
+    def test_gating_complet(self):
+        profil = {
+            "relationship_stage": "chaleureux",
+            "character": {"gender": "F", "personality": "solaire"},
         }
+        assert VOIX.vocal_prevu(profil, True, "chaleureux", self._Cfg()) is True
+        # Option du profil désactivée → jamais.
+        assert VOIX.vocal_prevu(profil, False, "chaleureux", self._Cfg()) is False
+        # Stades bas → jamais.
+        for st in ("rejet", "froid", "reserve", "neutre"):
+            assert VOIX.vocal_prevu(
+                {**profil, "relationship_stage": st}, True, st, self._Cfg()
+            ) is False, f"pas de vocal à {st}"
+        # Backend désactivé → jamais.
+        assert VOIX.vocal_prevu(profil, True, "chaleureux", None) is False
 
-    def test_voix_exposee_seulement_chaleureux_et_proche(self):
-        from server.main import _public_profile
-        from server.relation.state import RelationState
+    def test_proba_zero(self):
+        class _Cfg0(self._Cfg):
+            chance_per_reply = 0.0
 
-        st = RelationState(_DATA, "gatev")
-        for stade in ("rejet", "froid", "reserve", "neutre"):
-            pub = _public_profile(st, self._profil_session(stade))
-            assert pub["voix"] is None, f"voix ne devrait pas exister à {stade}"
-        for stade in ("chaleureux", "proche"):
-            pub = _public_profile(st, self._profil_session(stade))
-            assert pub["voix"] is not None, f"voix devrait exister à {stade}"
-            assert pub["voix"]["genre"] == "femme"
+        profil = {"relationship_stage": "proche"}
+        assert VOIX.vocal_prevu(profil, True, "proche", _Cfg0()) is False
+
+    def test_nettoyage_pour_synthese(self):
+        brut = "Salut toi ! 😊 **regarde** ça : [un lien](https://x.y) `code` 🎉"
+        net = VOIX.nettoyer_pour_voix(brut)
+        assert "😊" not in net and "🎉" not in net
+        assert "**" not in net and "`" not in net and "https" not in net
+        assert "un lien" in net and "regarde" in net
+
+    def test_troncature_sur_fin_de_phrase(self):
+        long = ("Une phrase complète ici. " * 40).strip()
+        net = VOIX.nettoyer_pour_voix(long, max_chars=200)
+        assert len(net) <= 205
+        assert net.endswith((".", "!", "?", "…", ","))
 
 
 class TestProfilVoix:

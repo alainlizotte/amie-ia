@@ -63,7 +63,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🔔 **Notifications OS** | Alertes système quand ton match écrit pendant que l'app est en arrière-plan — désactivable dans « Mon profil » |
-| 🔊 **Voix des messages** | À partir du stade « Chaleureux » : lecture vocale automatique (Web Speech API, voix du système, locale) avec un profil vocal par personnage — genre + personnalité → pitch/vitesse ; bouton 🔊 pour réécouter. Désactivable dans « Mon profil » |
+| 🎙 **Messages vocaux** | À partir du stade « Chaleureux », ton match t'envoie parfois de **vrais vocaux** à la place du texte (bulle ▶ waveform à écouter, voix neurales adaptées à son genre et sa personnalité). Désactivable dans « Mon profil » |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 | 📱 **Mobile** | Panneau d'informations accessible en superposition via le bouton ⓘ |
 
@@ -182,8 +182,8 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
     multiplicateur), le mensonge est ensuite révélé.
   - **Action ou vérité** (dès « neutre ») : après le choix du match, le
     serveur tire la vérité ou le défi dans des banques graduées par stade
-    (brise-glace à « froid » → audacieux à « proche ») et colorées par les
-    intérêts du personnage ; répondre rapporte +6.
+    (le personnage pose la question — le match se livre, jamais l'inverse ;
+    aucun gagnant ni perdant, pas de score) ; répondre rapporte +6.
   - **20 questions** (dès « neutre ») : un objet secret lié à l'univers du
     personnage (escalade → une raquette, lecture → un livre…) ; chaque
     question oui/non fait avancer le compteur, des indices tombent aux
@@ -217,6 +217,15 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   le modèle d'édition) et le personnage est ajouté à vos côtés dans la
   scène ; replis en cascade (échec d'édition ou pas de photo joueur →
   photo solo ; garde-fous de tenue par stade inchangés).
+- **Messages vocaux** (`server/voice.py`, backend edge-tts) : à partir du
+  stade « chaleureux » et si l'option du profil est active, une réponse a
+  `voice.chance_per_reply` (25 % par défaut) de devenir un **vrai message
+  vocal** — jamais diffusé en texte : bulle ▶ waveform avec durée, à
+  écouter comme dans une messagerie. Le texte reste dans le contexte LLM
+  (l'audio REMPLACE le texte dans le fil — le streaming est désactivé ce
+  tour-là) et le flag audio est persisté (les vocaux survivent aux
+  reconnexions). Voix neurales par genre + personnalité (pitch/vitesse) ;
+  repli silencieux sur le texte si la synthèse échoue.
 - **VRAM** : le modèle de chat est déchargé quand aucun tour n'est actif
   (immédiat ou après un délai configurable), et **systématiquement déchargé
   avant chaque génération d'image puis rechargé une fois la génération
@@ -359,7 +368,7 @@ rechargé à la fin (voir `server/gpu.py`).
 ### Tests unitaires (hors ligne)
 
 ```powershell
-.venv\Scripts\python -m pytest -q          # 337 tests
+.venv\Scripts\python -m pytest -q          # 343 tests
 ```
 
 ### Tests LIVE de conformité (serveur démarré)

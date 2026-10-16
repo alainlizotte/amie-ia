@@ -172,6 +172,23 @@ def outfit_clause(stage: str, explicit: bool = True) -> str:
     )
 
 
+# Traits d'apparence attendus dans une scène du directeur photo (cheveux,
+# yeux, silhouette…). Une scène qui n'en mentionne AUCUN ne verrouille pas
+# l'identité du personnage → on retombe sur le prompt avec la fiche complète
+# (sinon les photos sortent sans cheveux/yeux — personnage méconnaissable).
+_APPARENCE_RE = re.compile(
+    r"\b(hair|eyes|brunette|blonde|redhead|bald|curl\w*|braid\w*|ponytail|"
+    r"chignon|beard|mustache|freckle\w*|skin|tall|petite|platinum|"
+    r"auburn|brun\w*|chatain\w*|rousse?|blond\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _scene_decrit_apparence(scene: str) -> bool:
+    """True si la scène décrit au moins un trait physique (cheveux, yeux…)."""
+    return bool(_APPARENCE_RE.search(scene or ""))
+
+
 def photo_prompt_for_stage(
     character: dict[str, Any],
     stage: str,
@@ -188,12 +205,15 @@ def photo_prompt_for_stage(
     `explicit`  : au stade « proche », autorise la nudité explicite
                   (voir `image.allow_explicit_from_proche`).
 
-    Quand la scène existe, elle fait foi SEULE pour l'apparence/la tenue :
-    la fiche du personnage n'est PAS réinjectée (son style quotidien —
-    « elle porte des robes fluides » — contredirait une scène où elle est
-    nue ou autrement habillée, et noierait le modèle d'image sous des
-    directives contradictoires). La clause de tenue du stade reste
-    systématiquement ajoutée en garde-fou.
+    Quand la scène existe ET décrit l'apparence (cheveux/yeux — ancres
+    d'identité), elle fait foi SEULE pour l'apparence/la tenue : la fiche
+    du personnage n'est PAS réinjectée (son style quotidien — « elle porte
+    des robes fluides » — contredirait une scène où elle est nue ou
+    autrement habillée, et noierait le modèle d'image sous des directives
+    contradictoires). Si la scène ne décrit PAS l'apparence, la fiche
+    COMPLÈTE est réinjectée : mieux vaut un léger risque de contradiction
+    de tenue qu'un personnage méconnaissable. La clause de tenue du stade
+    reste systématiquement ajoutée en garde-fou.
 
     Cadrage par défaut : SELFIE (téléphone tenu dans sa main, bras tendu)
     — imposé sauf si la scène ou le hint utilisateur réclame explicitement
@@ -204,7 +224,7 @@ def photo_prompt_for_stage(
     # « chaleureux ») — il ne doit pas contourner la règle de tenue.
     user_hint = sanitize_scene(user_hint, stage, explicit)
     scene_clean = (scene or "").strip(" ,.")
-    if scene_clean:
+    if scene_clean and _scene_decrit_apparence(scene_clean):
         framing = (
             "" if _wants_alt_framing(scene_clean, user_hint)
             else f"{selfie_clause(character)}, "
@@ -215,11 +235,14 @@ def photo_prompt_for_stage(
             "romantic dating profile photo style, high resolution, no text"
         )
 
-    # Fallback déterministe (directeur indisponible) : fiche du personnage.
+    # Fallback déterministe (directeur indisponible OU scène sans apparence) :
+    # fiche du personnage + scène/hint comme contexte.
     desc = _base_description(character)
-    hint = f", {user_hint.strip()}" if user_hint and user_hint.strip() else ""
+    fragments = [user_hint.strip(), scene_clean]
+    contexte = ", ".join(f for f in fragments if f)
+    hint = f", {contexte}" if contexte else ""
     framing = (
-        "" if _wants_alt_framing(user_hint)
+        "" if _wants_alt_framing(scene_clean, user_hint)
         else f"{selfie_clause(character)}, "
     )
     return (
@@ -322,6 +345,9 @@ def director_system(character: dict[str, Any], stage: str,
         f"{poss} pose and action, {poss} gaze and expression.",
         f"Fixed appearance of {name} (keep consistent): "
         f"{str(character.get('appearance') or 'unspecified')[:280]}",
+        "MANDATORY IDENTITY ANCHORS: ALWAYS start your description with "
+        f"{name}'s HAIR (color, length, style) and visible facial features "
+        "(eyes, face) — every photo must be recognizably the same person.",
         f"IMPORTANT: what {p} is wearing RIGHT NOW may differ from "
         f"{poss} usual everyday style — describe the actual current state.",
         f"Her gaze depends on the scene: eye contact with the viewer only "

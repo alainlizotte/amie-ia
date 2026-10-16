@@ -1,10 +1,9 @@
 // Panneau de chat — fil de messages, saisie, boutons « demander une photo »
-// et « lancer un mini-jeu », réponses rapides du jeu en cours.
+// et « lancer un mini-jeu », réponses rapides du jeu en cours, bulles vocales.
 
 import { useEffect, useRef, useState } from "react";
 import { renderMarkdown } from "../utils/markdown";
-import type { ChatMessage, GameInfo, ProfilVoix } from "../api/types";
-import { arreterVoix, parler, voixDisponible } from "../utils/voix";
+import type { ChatMessage, GameInfo } from "../api/types";
 
 /** Mini-jeux proposés (ids miroir server/relation/games.JEUX_DISPONIBLES). */
 const MINI_JEUX: { id: string; label: string; emoji: string }[] = [
@@ -21,8 +20,6 @@ export function ChatPanel({
   characterName,
   canRequestPhoto,
   game,
-  voix,
-  voixActive,
   onSend,
   onPhotoRequest,
   onGameStart,
@@ -34,8 +31,6 @@ export function ChatPanel({
   characterName: string;
   canRequestPhoto: boolean;
   game: GameInfo | null;
-  voix?: ProfilVoix;
-  voixActive: boolean;
   onSend: (text: string) => void;
   onPhotoRequest: (hint?: string) => void;
   onGameStart: (game: string) => void;
@@ -84,13 +79,7 @@ export function ChatPanel({
       {/* Fil de messages */}
       <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            m={m}
-            characterName={characterName}
-            voix={voix}
-            voixActive={voixActive}
-          />
+          <MessageBubble key={m.id} m={m} characterName={characterName} />
         ))}
         {typing && (
           <div className="flex items-center gap-1.5 px-2 text-rose-300/60">
@@ -195,29 +184,7 @@ export function ChatPanel({
   );
 }
 
-function MessageBubble({
-  m,
-  characterName,
-  voix,
-  voixActive,
-}: {
-  m: ChatMessage;
-  characterName: string;
-  voix?: ProfilVoix;
-  voixActive: boolean;
-}) {
-  const [lecture, setLecture] = useState(false);
-
-  function ecouter() {
-    if (lecture) {
-      arreterVoix();
-      setLecture(false);
-      return;
-    }
-    parler(m.content, voix, () => setLecture(false));
-    setLecture(true);
-  }
-
+function MessageBubble({ m, characterName }: { m: ChatMessage; characterName: string }) {
   if (m.role === "info") {
     return (
       <p className="mx-auto w-fit max-w-[90%] rounded-full bg-fuchsia-950/40 px-4 py-1.5 text-center text-xs italic text-fuchsia-200/70">
@@ -235,6 +202,17 @@ function MessageBubble({
       </div>
     );
   }
+  // Message VOCAL : comme dans une vraie messagerie — une bulle audio à
+  // écouter, le texte n'est jamais affiché.
+  if (m.audio) {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[80%] rounded-2xl rounded-bl-md border border-rose-900/40 bg-[#331627]/80 px-2 py-2 text-sm text-rose-50">
+          <VoiceBubble src={m.audio} duration={m.duration} label={characterName} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex justify-start">
       <div className="max-w-[80%] rounded-2xl rounded-bl-md border border-rose-900/40 bg-[#331627]/80 px-4 py-2.5 text-sm text-rose-50">
@@ -249,22 +227,94 @@ function MessageBubble({
           dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }}
         />
         {!m.streaming && m.content && (
-          <div className="mt-1 flex items-center justify-between gap-2">
-            <span className="sr-only">{characterName} a répondu</span>
-            {voixActive && voixDisponible() && (
-              <button
-                type="button"
-                onClick={ecouter}
-                title={lecture ? "Arrêter la lecture" : "Écouter le message"}
-                className="rounded-full px-1.5 py-0.5 text-xs text-rose-200/50 transition hover:bg-rose-900/40 hover:text-rose-200"
-              >
-                {lecture ? "⏹" : "🔊"}
-              </button>
-            )}
-          </div>
+          <span className="sr-only">{characterName} a répondu</span>
         )}
         {m.streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-rose-300 align-middle" />}
       </div>
+    </div>
+  );
+}
+
+/** Barres de la forme d'onde — hauteurs dérivées du src (stable par message). */
+function Waveform({ src, actif }: { src: string; actif: boolean }) {
+  const barres = [6, 12, 8, 16, 10, 20, 14, 7, 18, 11, 9, 15, 6, 13, 17, 8];
+  let h = 0;
+  for (let i = 0; i < src.length; i++) h = (h * 31 + src.charCodeAt(i)) >>> 0;
+  const decalage = h % barres.length;
+  return (
+    <div className={`flex h-5 items-center gap-[2px] ${actif ? "animate-pulse" : ""}`}>
+      {barres.map((_, i) => (
+        <span
+          key={i}
+          className="w-[2.5px] rounded-full bg-rose-100/90"
+          style={{ height: `${barres[(i + decalage) % barres.length]}px` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function formatDuree(s: number): string {
+  const sec = Math.max(1, Math.round(s));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+/** Bulle audio type messagerie : ▶ + forme d'onde + durée. Un seul vocal
+ * joue à la fois (lecture d'ailleurs coupe la précédente). */
+let audioEnCours: HTMLAudioElement | null = null;
+
+function VoiceBubble({ src, duration, label }: { src: string; duration?: number | null; label: string }) {
+  const [lecture, setLecture] = useState(false);
+  const refAudio = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const audio = new Audio(src);
+    audio.onended = () => setLecture(false);
+    audio.onpause = () => setLecture(false);
+    refAudio.current = audio;
+    return () => {
+      audio.pause();
+      if (audioEnCours === audio) audioEnCours = null;
+    };
+  }, [src]);
+
+  function basculer() {
+    const audio = refAudio.current;
+    if (!audio) return;
+    if (lecture) {
+      audio.pause();
+      audio.currentTime = 0;
+      setLecture(false);
+      return;
+    }
+    if (audioEnCours && audioEnCours !== audio) {
+      audioEnCours.pause();
+      audioEnCours.currentTime = 0;
+    }
+    audioEnCours = audio;
+    audio.play().catch(() => setLecture(false));
+    setLecture(true);
+  }
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <button
+        type="button"
+        onClick={basculer}
+        aria-label={lecture ? `Arrêter le vocal de ${label}` : `Écouter le vocal de ${label}`}
+        title={lecture ? "Arrêter" : `Vocal de ${label} — écouter`}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-500/90 text-white shadow transition hover:bg-rose-400"
+      >
+        {lecture ? (
+          <span className="text-[11px] leading-none">⏸</span>
+        ) : (
+          <span className="ml-0.5 border-y-[6px] border-l-[9px] border-y-transparent border-l-white" />
+        )}
+      </button>
+      <Waveform src={src} actif={lecture} />
+      <span className="shrink-0 text-[10px] tabular-nums text-rose-200/60">
+        {duration ? formatDuree(duration) : "vocal"}
+      </span>
     </div>
   );
 }

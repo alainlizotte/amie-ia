@@ -117,6 +117,19 @@ class MemoryConfig:
 
 
 @dataclass
+class VoiceConfig:
+    """Messages vocaux du personnage — de vrais audios à la place du texte
+    (occasionnel, stade « chaleureux » requis). Backend edge-tts : voix
+    neurales Microsoft (Internet requis à la synthèse)."""
+    enabled: bool = True
+    # Proba qu'une réponse devienne un vocal (désactivable via le profil).
+    chance_per_reply: float = 0.25
+    voice_femme: str = "fr-CA-SylvieNeural"   # substituables (fr-FR-Denise…)
+    voice_homme: str = "fr-CA-AntoineNeural"  # (fr-FR-Henri…)
+    max_chars: int = 450                      # plafond du texte synthétisé
+
+
+@dataclass
 class ImageConfig:
     enabled: bool = True
     base_url: str = ""                # vide → env COMFYUI_BASE_URL → défaut local
@@ -146,6 +159,7 @@ class AppConfig:
     relation: RelationConfig = field(default_factory=RelationConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     image: ImageConfig = field(default_factory=ImageConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
     raw: dict[str, Any] = field(default_factory=dict)
     project_root: Path = Path(__file__).resolve().parent.parent
 
@@ -186,6 +200,7 @@ def load_config(path: str | os.PathLike[str] | None = None) -> AppConfig:
         relation=_coerce(RelationConfig, raw.get("relation", {})),
         memory=_coerce(MemoryConfig, raw.get("memory", {})),
         image=_coerce(ImageConfig, raw.get("image", {})),
+        voice=_coerce(VoiceConfig, raw.get("voice", {})),
         raw=raw,
         project_root=project_root,
     )

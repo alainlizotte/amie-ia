@@ -5,7 +5,6 @@ import { ChatSocket } from "../api/ws";
 import { STAGE_LABELS, STAGE_ORDER } from "../api/types";
 import { uid, useAmie } from "../store";
 import { playMessageSound } from "../utils/sound";
-import { parler } from "../utils/voix";
 
 export function useChatSocket(sid: string | undefined) {
   const socketRef = useRef<ChatSocket | null>(null);
@@ -41,19 +40,18 @@ export function useChatSocket(sid: string | undefined) {
             setProfile(msg.profile);
             // Restaure l'état du mini-jeu (reconnexion / changement de page).
             setGame(msg.profile.game ?? null);
-            // La reconnexion a pu rater le `typing off` / `status done` de
-            // fin de tour : l'historique fraîchement rechargé inclut la
-            // dernière réponse, les indicateurs de réflexion doivent être
-            // levés (sinon l'UI reste bloquée sur « L'IA réfléchit… »).
             setTyping(false);
             setStatus("");
             setBusy(false);
-            // Rejoue l'historique persisté (une seule fois par join).
+            // Rejoue l'historique persisté (une seule fois par join),
+            // en gardant les flags « vocal » (audio) des messages.
             useAmie.setState((st) => ({
               messages: msg.history.map((h) => ({
                 id: uid(),
                 role: h.role === "assistant" ? "assistant" : "user",
                 content: h.content,
+                audio: h.audio ?? null,
+                duration: h.duration ?? null,
               })),
             }));
           } else if (msg.event === "auth_failed") {
@@ -102,11 +100,20 @@ export function useChatSocket(sid: string | undefined) {
 
         case "dm": {
           // Finalise la bulle en cours (ou en crée une si deltas manqués).
+          // Un message avec `audio` est un VOCAL : le client n'affiche que
+          // la bulle audio (le texte n'est jamais montré).
           const streaming = useAmie
             .getState()
             .messages.find((m) => m.streaming && m.role === "assistant");
           if (streaming) endStream(streaming.id, msg.text);
-          else addMessage({ id: uid(), role: "assistant", content: msg.text });
+          else
+            addMessage({
+              id: uid(),
+              role: "assistant",
+              content: msg.text,
+              audio: msg.audio ?? null,
+              duration: msg.duration ?? null,
+            });
           playMessageSound();
           // Notification OS (option du profil) — uniquement quand l'onglet
           // est en arrière-plan (sinon redondant avec le fil à l'écran).
@@ -122,7 +129,9 @@ export function useChatSocket(sid: string | undefined) {
               new Notification(
                 stMaintenant.profile?.character.name || "Ami(e) IA",
                 {
-                  body: msg.text.slice(0, 140),
+                  body: msg.audio
+                    ? "🎙 T'a envoyé un message vocal"
+                    : msg.text.slice(0, 140),
                   icon: stMaintenant.profile?.portrait_url ?? undefined,
                   tag: `amie-${stMaintenant.profile?.session_id ?? "dm"}`,
                 },
@@ -130,15 +139,6 @@ export function useChatSocket(sid: string | undefined) {
             } catch {
               /* notification indisponible */
             }
-          }
-          // Lecture vocale automatique (option du profil, Web Speech API)
-          // — seulement à partir du stade « Chaleureux » (voix exposée par
-          // le serveur à ce stade uniquement).
-          if (
-            (stMaintenant.profile?.options?.voix ?? true) &&
-            stMaintenant.profile?.voix
-          ) {
-            parler(msg.text, stMaintenant.profile?.voix);
           }
           // Sécurité : la réponse finale clôt toujours le tour, même si un
           // `typing off` / `status done` a été perdu en route.

@@ -68,6 +68,7 @@ from .llm.prompt_builder import PromptBuilder
 from .relation import presets as P
 from .relation import games as G
 from .relation import dates as D
+from . import voice as VOIX
 from .relation.memory import (
     EXTRACTION_PROMPT,
     Embedder,
@@ -291,17 +292,10 @@ def _public_profile(st: RelationState, profile: dict[str, Any]) -> dict[str, Any
         # Mini-jeu en cours — vue SANS secrets (ni mensonge, ni objet des 20
         # questions) : sert uniquement à l'UI (barre de réponses rapides).
         "game": G.jeu_public(profile.get("game")),
-        # Options d'expérience du compte (notifications OS, voix) + profil
-        # vocal du personnage (genre/pitch/rate → Web Speech API client).
-        # La voix n'est disponible qu'à partir du stade « chaleureux » :
-        # en dessous, on ne se connaît pas encore assez pour « se parler ».
+        # Options d'expérience du compte (notifications OS, vocaux).
         "options": _options_utilisateur(
             UP.charger_profil(_data_dir(),
                               (profile.get("meta", {}) or {}).get("user", ""))
-        ),
-        "voix": (
-            _profil_voix(character)
-            if stage in ("chaleureux", "proche") else None
         ),
     }
 
@@ -338,11 +332,17 @@ class ChatHistory:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            msgs = [
-                Message(role=d.get("role", "user"), content=d.get("content", ""))
-                for d in data
-                if isinstance(d, dict)
-            ][-self.max_events:]
+            msgs: list[Message] = []
+            for d in data:
+                if not isinstance(d, dict):
+                    continue
+                m = Message(role=d.get("role", "user"), content=d.get("content", ""))
+                if d.get("audio"):
+                    m.audio = str(d["audio"])
+                    if d.get("duration"):
+                        m.duration = int(d["duration"])
+                msgs.append(m)
+            msgs = msgs[-self.max_events:]
         except (OSError, json.JSONDecodeError):
             msgs = []
         # Purge en mémoire des cicatrices d'écho (2 messages assistant
@@ -359,7 +359,7 @@ class ChatHistory:
             out.append(m)
         self.history = out
 
-    def append(self, role: str, content: str) -> None:
+    def append(self, role: str, content: str, **extras: Any) -> None:
         if not content:
             return
         # Garde-fou : jamais deux messages assistant consécutifs identiques
@@ -371,7 +371,13 @@ class ChatHistory:
             and self._est_cicatrice(self.history[-1].content, content)
         ):
             return
-        self.history.append(Message(role=role, content=content))
+        entry = Message(role=role, content=content)
+        # Extras persistés (ex. audio : le message était un vocal — le
+        # contexte LLM garde le texte, l'UI n'affiche que l'audio).
+        for k, v in extras.items():
+            if v:
+                setattr(entry, k, v)
+        self.history.append(entry)
         if len(self.history) > self.max_events:
             self.history = self.history[-self.max_events:]
         self._persist()
@@ -383,7 +389,18 @@ class ChatHistory:
             tmp = path.with_suffix(".tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(
-                    [{"role": m.role, "content": m.content} for m in self.history],
+                    [
+                        {
+                            "role": m.role,
+                            "content": m.content,
+                            **{
+                                k: getattr(m, k)
+                                for k in ("audio", "duration")
+                                if getattr(m, k, None)
+                            },
+                        }
+                        for m in self.history
+                    ],
                     f, ensure_ascii=False, indent=2,
                 )
             tmp.replace(path)
@@ -2722,6 +2739,21 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             )
             messages = [Message(role="system", content=system_text)] + list(hub_hist.history)
 
+            # 5bis. Message vocal ? Décidé AVANT la génération : le vocal
+            #      REMPLACE le texte dans le fil — le streaming texte est
+            #      désactivé pour ce tour (aucun delta ne doit le révéler).
+            #      Gating déterministe : option du profil + stade
+            #      « chaleureux »+ + probabilité voice.chance_per_reply.
+            options_joueur = _options_utilisateur(user_profil)
+            wants_vocal = VOIX.vocal_prevu(
+                profile, options_joueur["voix"], stage, cfg.voice
+            )
+            if wants_vocal:
+                await hub.broadcast({
+                    "type": "status",
+                    "description": "🎙 prépare un message vocal…",
+                })
+
             # 6. Génération (aucun tool exposé au modèle) — avec ou sans
             # streaming vers le(s) client(s) (llm.stream_to_clients).
             # Stade « rejet » : AUCUN appel LLM — la consigne « refus court
@@ -2731,17 +2763,17 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             # calculé normalement : le tour suivant reflète le nouveau score.
             if stage == "rejet":
                 narration = ""
-            elif cfg.llm.stream_to_clients:
+            elif wants_vocal or not cfg.llm.stream_to_clients:
+                # Réponse complète en un seul bloc (aucun delta pendant la
+                # génération) — le thinking est déjà stripé par le client.
+                res = await app.state.client.chat(messages)
+                narration = res.content.strip()
+            else:
                 narration_parts: list[str] = []
                 async for token in app.state.client.stream_chat(messages):
                     narration_parts.append(token)
                     await hub.broadcast({"type": "delta", "text": token})
                 narration = "".join(narration_parts).strip()
-            else:
-                # Réponse complète en un seul bloc (aucun delta pendant la
-                # génération) — le thinking est déjà stripé par le client.
-                res = await app.state.client.chat(messages)
-                narration = res.content.strip()
             # Anti-fuite : coupe toute analyse/instruction interne que le
             # modèle aurait ajoutée en fin de réponse.
             narration = _cut_meta_block(narration)
@@ -2750,8 +2782,40 @@ async def _handle_say(hub: SessionHub, sid: str, text: str) -> None:
             if not narration:
                 narration = "…"  # garde-fou : jamais de bulle vide
 
-            hub_hist.append("assistant", narration)
-            await hub.broadcast({"type": "dm", "text": narration})
+            # 6ter. Message vocal : le texto devient un AUDIO dans le fil
+            #      (jamais diffusé en texte — il reste en contexte LLM et
+            #      persisté avec le flag audio pour les reconnexions).
+            audio_url: Optional[str] = None
+            audio_duree: Optional[int] = None
+            if wants_vocal and narration != "…":
+                character = profile.get("character", {}) or {}
+                dest_dir = cfg.abs(cfg.paths.data_dir) / "voice" / sid
+                dest = dest_dir / (
+                    f"vocal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+                )
+                resultat = await VOIX.generer_vocal(
+                    sid, narration, _profil_voix(character), dest, cfg.voice,
+                )
+                if resultat is not None:
+                    audio_duree, _ = resultat
+                    audio_url = f"/data/voice/{sid}/{dest.name}"
+                    _log.info(
+                        "[%s] message vocal généré (%ds) : %s",
+                        sid, audio_duree, dest.name,
+                    )
+            if audio_url:
+                hub_hist.append(
+                    "assistant", narration, audio=audio_url, duration=audio_duree,
+                )
+                await hub.broadcast({
+                    "type": "dm",
+                    "text": narration,
+                    "audio": audio_url,
+                    "duration": audio_duree,
+                })
+            else:
+                hub_hist.append("assistant", narration)
+                await hub.broadcast({"type": "dm", "text": narration})
 
             # 6bis. Narration du scénario en 2e passe — si la réponse
             #      principale n'a PAS intégré la scène en attente (test des
@@ -3011,7 +3075,17 @@ async def ws_chat(ws: WebSocket, sid: str) -> None:
                     "type": "sys",
                     "event": "joined",
                     "history": [
-                        {"role": m.role, "content": m.content}
+                        {
+                            "role": m.role,
+                            "content": m.content,
+                            **(
+                                {
+                                    "audio": m.audio,
+                                    "duration": getattr(m, "duration", None),
+                                }
+                                if getattr(m, "audio", None) else {}
+                            ),
+                        }
                         for m in hist.history
                         if m.role in ("user", "assistant") and m.content
                     ],

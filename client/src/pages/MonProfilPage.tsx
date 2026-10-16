@@ -16,7 +16,6 @@ import {
 } from "../api/rest";
 import type { MonProfil } from "../api/types";
 import { useAmie } from "../store";
-import { arreterVoix, parler, voixDisponible } from "../utils/voix";
 
 type Champs = MonProfil["profil"];
 
@@ -167,13 +166,6 @@ export function MonProfilPage() {
         Notification.requestPermission().catch(() => undefined);
       }
     }
-    if (cle === "voix") {
-      if (valeur && voixDisponible()) {
-        parler("Salut ! C'est ma voix pour tous nos messages 💬");
-      } else {
-        arreterVoix();
-      }
-    }
   }
 
   if (isLoading) {
@@ -297,11 +289,10 @@ export function MonProfilPage() {
             className="mt-0.5 h-4 w-4 accent-rose-500"
           />
           <span>
-            <span className="font-medium text-rose-100">🔊 Voix des messages</span>{" "}
-            — à partir du stade « Chaleureux », tes matchs « parlent » :
-            lecture automatique de leurs messages avec une voix adaptée à
-            leur genre et leur personnalité (bouton 🔊 sur chaque message
-            pour réécouter). {voixDisponible() ? "" : "(Voix non disponible dans ce navigateur)"}
+            <span className="font-medium text-rose-100">🎙 Vocaux des messages</span>{" "}
+            — à partir du stade « Chaleureux », tes matchs t'envoient parfois
+            de vrais messages vocaux (à écouter, comme dans une messagerie)
+            avec une voix adaptée à leur genre et leur personnalité.
           </span>
         </label>
       </div>

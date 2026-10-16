@@ -823,11 +823,19 @@ def traiter_message_jeu(
         # step « reponse » : n'importe quel message = la réponse.
         profile["game"] = None
         directive = (
-            "[MINI-JEU — RÉSOLUTION (Action ou vérité)\n"
-            "Ton match vient de répondre à ton action/vérité : « "
-            f"{(jeu.get('invite') or '')[:200]} ». Réagis avec ta "
-            "personnalité (amusement, teasing selon le stade de la "
-            "relation), commente sa réponse, puis enchaîne naturellement. "
+            "[MINI-JEU — RÔLES CLAIRS (Action ou vérité)\n"
+            "Ton match vient de répondre à TON action/TA vérité — c'est "
+            "LUI/ELLE qui se livre, pas toi. Le texte de sa réponse : « "
+            f"{(text or '')[:300]} ».\n"
+            "Réagis UNIQUEMENT à CE qu'il/elle a révélé : empathie, rire, "
+            "teasing selon ta personnalité et le stade de la relation.\n"
+            "INTERDITS ABSOLUS : répondre à la question à sa place, "
+            "raconter TES propres peurs/secrets à la place de réagir aux "
+            "siens, inventer des règles ou un score (« tu as gagné », « tu "
+            "as perdu », « manche », « règles du jeu ») — ce jeu n'a "
+            "NI gagnant NI perdant, c'est juste une conversation.\n"
+            "Puis enchaîne naturellement (poser une nouvelle question à "
+            "ton tour est humain — c'est de la curiosité, pas une règle). "
             "Ne mentionne jamais la mécanique du jeu côté système.]"
         )
         return {"points": POINTS_AOV_PARTICIPATION, "mode": "ajoute",

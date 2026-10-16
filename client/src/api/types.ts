@@ -32,16 +32,6 @@ export interface PublicProfile {
   game?: GameInfo | null;
   /** Options d'expérience du compte (absent = activé). */
   options?: { notifications: boolean; voix: boolean };
-  /** Profil vocal du personnage (genre, pitch, rate — Web Speech API).
-   * Null sous le stade « Chaleureux » : la voix se débloque avec l'intimité. */
-  voix?: ProfilVoix | null;
-}
-
-/** Profil vocal — voir server/main.py `_profil_voix` (miroir). */
-export interface ProfilVoix {
-  genre: string;
-  pitch: number;
-  rate: number;
 }
 
 /** Mini-jeu en cours — état « public » envoyé par le serveur (sans secrets). */
@@ -109,6 +99,10 @@ export interface ChatMessage {
   image?: string | null;
   caption?: string;
   streaming?: boolean;
+  /** Message vocal : URL du fichier audio (le texte n'est pas affiché). */
+  audio?: string | null;
+  /** Durée approximative du vocal en secondes. */
+  duration?: number | null;
 }
 
 export type ToolEvent =
@@ -126,13 +120,13 @@ export type WsOutMessage =
 
 /** Messages entrants (serveur → client). */
 export type WsInMessage =
-  | { type: "sys"; event: "joined"; history: { role: string; content: string }[]; profile: PublicProfile }
+  | { type: "sys"; event: "joined"; history: { role: string; content: string; audio?: string; duration?: number | null }[]; profile: PublicProfile }
   | { type: "sys"; event: "auth_failed" | "auth_required" | "error" | "busy"; detail?: string }
   | { type: "player"; text: string }
   | { type: "status"; description: string; done?: boolean }
   | { type: "typing"; on: boolean }
   | { type: "delta"; text: string }
-  | { type: "dm"; text: string }
+  | { type: "dm"; text: string; audio?: string | null; duration?: number | null }
   | { type: "tool_event"; event: ToolEvent }
   | { type: "game"; state: GameInfo | null }
   | {

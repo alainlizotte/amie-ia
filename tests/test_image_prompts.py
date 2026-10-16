@@ -70,17 +70,28 @@ class TestSelfie:
 
 
 class TestScene:
-    def test_scene_presente_fiche_non_reinjectee(self):
-        # Avec une scène, la fiche (style quotidien, intérêts) ne doit PAS
-        # coexister avec elle : source de directives contradictoires.
+    def test_scene_avec_apparence_fiche_non_reinjectee(self):
+        # Scène qui décrit les traits physiques : elle fait foi SEULE (pas de
+        # fiche à côté — source de directives contradictoires).
         p = photo_prompt_for_stage(
             _CHAR, "neutre", user_hint="au café",
+            scene="tall brunette with wavy hair, sitting at the dinner table, "
+                  "wearing a red dress, hazel eyes",
+        )
+        assert "tall brunette" in p              # apparence de la scène
+        assert "wearing a red dress" in p        # la scène fait foi
+        assert "vintage shopping" not in p       # intérêts de la fiche absents
+        assert "au café" not in p                # hint déjà passé au directeur
+
+    def test_scene_sans_apparence_fiche_reinjectee(self):
+        # Scène sans AUCUN trait physique (que l'action) : la fiche complète
+        # est réinjectée — sinon les photos sortent sans cheveux/yeux.
+        p = photo_prompt_for_stage(
+            _CHAR, "neutre",
             scene="sitting at the dinner table, wearing a red dress",
         )
-        assert "tall brunette" not in p          # apparence de la fiche
-        assert "vintage shopping" not in p       # intérêts de la fiche
-        assert "au café" not in p                # hint déjà passé au directeur
-        assert "wearing a red dress" in p        # la scène fait foi
+        assert "tall brunette" in p          # apparence de la fiche restaurée
+        assert "wearing a red dress" in p    # la scène reste le contexte
 
 
 class TestGardeFousTenue:
