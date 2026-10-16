@@ -76,7 +76,7 @@ export function MonProfilPage() {
   const setUser = useAmie((s) => s.setUser);
   const reset = useAmie((s) => s.reset);
   const [form, setForm] = useState<Champs>(VIDE);
-  const [options, setOptions] = useState({ notifications: true, voix: true });
+  const [options, setOptions] = useState({ notifications: true, voix: false });
   const [erreur, setErreur] = useState("");
   const [analyseEnCours, setAnalyseEnCours] = useState(false);
   const [confirmerSuppression, setConfirmerSuppression] = useState(false);
@@ -290,9 +290,10 @@ export function MonProfilPage() {
           />
           <span>
             <span className="font-medium text-rose-100">🎙 Vocaux des messages</span>{" "}
-            — à partir du stade « Chaleureux », tes matchs t'envoient parfois
-            de vrais messages vocaux (à écouter, comme dans une messagerie)
-            avec une voix adaptée à leur genre et leur personnalité.
+            — désactivés par défaut. Activés : à partir du stade «
+            Chaleureux », tes matchs t'envoient parfois de vrais messages
+            vocaux (à écouter, comme dans une messagerie) avec une voix
+            adaptée à leur genre et leur personnalité.
           </span>
         </label>
       </div>

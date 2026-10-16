@@ -16,11 +16,13 @@ _DATA = str(_CFG.abs(_CFG.paths.data_dir))
 
 
 class TestOptionsExperience:
-    def test_absent_signifie_active(self):
+    def test_defauts(self):
+        """Notifications : activées par défaut. Vocaux : DÉSACTIVÉS par
+        défaut — ils ne partent que sur activation explicite du profil."""
         profil = UP.sauver_profil(_DATA, "OptTest1", {"name": "Alex"})
         opts = _options_utilisateur(profil)
         assert opts["notifications"] is True
-        assert opts["voix"] is True
+        assert opts["voix"] is False
 
     def test_desactivation_persiste(self):
         profil = UP.sauver_profil(_DATA, "OptTest2", {
@@ -33,11 +35,21 @@ class TestOptionsExperience:
         opts2 = _options_utilisateur(UP.charger_profil(_DATA, "opttest2"))
         assert opts2["notifications"] is False
 
-    def test_valeurs_invalides_sont_actives(self):
-        # Toute valeur autre que False explicite → activé (défaut sûr).
+    def test_voix_active_explicitement(self):
+        """Activation explicite : les vocaux fonctionnent."""
+        profil = UP.sauver_profil(_DATA, "OptTest3", {"voix": True})
+        opts = _options_utilisateur(profil)
+        assert opts["voix"] is True
+        opts2 = _options_utilisateur(UP.charger_profil(_DATA, "opttest3"))
+        assert opts2["voix"] is True
+
+    def test_valeurs_invalides(self):
+        """Valeur illisible = défaut de l'option (notifications activées,
+        vocaux désactivés)."""
         profil = {"notifications": "bof", "voix": None}
         opts = _options_utilisateur(profil)
-        assert opts["notifications"] is True and opts["voix"] is True
+        assert opts["notifications"] is True
+        assert opts["voix"] is False
 
 
 class TestGatingVocauxParStade:

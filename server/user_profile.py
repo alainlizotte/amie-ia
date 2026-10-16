@@ -41,7 +41,8 @@ CHAMPS: tuple[str, ...] = (
 )
 
 # Options d'expérience (désactivables dans « Mon profil ») — persistées avec
-# la fiche, mais hors catégories « dating app ». Absentes = ACTIVÉES.
+# la fiche, mais hors catégories « dating app ». Défauts : notifications
+# ACTIVÉE si absente ; vocaux DÉSACTIVÉS si absents.
 OPTIONS: tuple[str, ...] = ("notifications", "voix")
 
 # Champs techniques (non éditables directement par l'utilisateur).

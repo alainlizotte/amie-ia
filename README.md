@@ -63,7 +63,7 @@ rejet → froid → réservé → neutre → chaleureux → proche
 | 👤 **Mon profil** | Votre propre fiche « dating app » (mêmes catégories que les personnages) + photo analysée par le modèle **vision** — le personnage sait avec qui il parle et s'y réfère naturellement |
 | 👤 **Comptes locaux** | Inscription/connexion avec tokens Bearer — chaque utilisateur voit uniquement ses sessions |
 | 🔔 **Notifications OS** | Alertes système quand ton match écrit pendant que l'app est en arrière-plan — désactivable dans « Mon profil » |
-| 🎙 **Messages vocaux** | À partir du stade « Chaleureux », ton match t'envoie parfois de **vrais vocaux** à la place du texte (bulle ▶ waveform à écouter, voix neurales adaptées à son genre et sa personnalité). Désactivable dans « Mon profil » |
+| 🎙 **Messages vocaux** | À partir du stade « Chaleureux », ton match peut t'envoyer de **vrais vocaux** à la place du texte (bulle ▶ waveform à écouter, voix neurales adaptées à son genre et sa personnalité). **Désactivés par défaut** — activables dans « Mon profil » |
 | 🖼 **Visionneuse** | Album consultable plein écran (clavier ←/→, Échap) |
 | 📱 **Mobile** | Panneau d'informations accessible en superposition via le bouton ⓘ |
 
@@ -220,7 +220,8 @@ config/          config.yaml (local, gitigné) — voir config.example.yaml
   scène ; replis en cascade (échec d'édition ou pas de photo joueur →
   photo solo ; garde-fous de tenue par stade inchangés).
 - **Messages vocaux** (`server/voice.py`, backend edge-tts) : à partir du
-  stade « chaleureux » et si l'option du profil est active, une réponse a
+  stade « chaleureux » **et si l'option est activée dans « Mon profil »**
+  (DÉSACTIVÉE par défaut), une réponse a
   `voice.chance_per_reply` (25 % par défaut) de devenir un **vrai message
   vocal** — jamais diffusé en texte : bulle ▶ waveform avec durée, à
   écouter comme dans une messagerie. Le texte reste dans le contexte LLM

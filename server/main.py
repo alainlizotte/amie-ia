@@ -638,10 +638,14 @@ def _profil_public_utilisateur(utilisateur: str) -> dict[str, Any]:
 
 
 def _options_utilisateur(profil: dict[str, Any]) -> dict[str, bool]:
-    """Options d'expérience — ABSENT = ACTIVÉ (comportement par défaut)."""
+    """Options d'expérience :
+    - notifications : ABSENT = ACTIVÉ (comportement par défaut) ;
+    - voix (vocaux) : ABSENT = DÉSACTIVÉ — les messages vocaux ne partent
+      que si l'utilisateur les a explicitement activés dans son profil.
+    """
     return {
         "notifications": profil.get("notifications", True) is not False,
-        "voix": profil.get("voix", True) is not False,
+        "voix": profil.get("voix", False) is True,
     }
 
 
